@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, session, redirect, url_for
 from flask_socketio import SocketIO, join_room, leave_room, emit
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24).hex()
+app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-in-production")
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "platform.db")
@@ -279,10 +279,13 @@ def on_disconnect():
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+init_db()
+
 if __name__ == "__main__":
-    init_db()
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("DEBUG", "true").lower() == "true"
     print("=" * 50)
     print("  CodeTogether — Collaborative Python IDE")
-    print("  http://localhost:5000")
+    print(f"  http://localhost:{port}")
     print("=" * 50)
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=port, debug=debug)

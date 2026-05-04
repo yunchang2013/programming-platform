@@ -18,7 +18,8 @@ env/
 
 # Environment
 .env
-.env.*
+.env.local
+.env.*.local
 
 # IDE
 .vscode/
