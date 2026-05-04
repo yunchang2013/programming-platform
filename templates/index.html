@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodeTogether</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="landing-page">
+
+  <div class="landing-container">
+    <header class="landing-header">
+      <div class="logo">
+        <span class="logo-icon">⌨</span>
+        <span class="logo-text">CodeTogether</span>
+      </div>
+      <p class="tagline">Real-time collaborative Python IDE</p>
+    </header>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    {% if username %}
+    <!-- ── Logged-in view ── -->
+    <div class="card welcome-card">
+      <div class="welcome-bar">
+        <span>Welcome, <strong>{{ username }}</strong>
+          {% if user_type == 'guest' %}<span class="badge badge-guest">Guest</span>{% endif %}
+        </span>
+        <a href="/logout" class="btn btn-ghost btn-sm">Sign out</a>
+      </div>
+    </div>
+
+    <div class="action-grid">
+      <!-- Create room -->
+      <div class="card action-card">
+        <h2>Start a Room</h2>
+        <p>Create a new collaborative session and share the room code with others.</p>
+        <form method="POST" action="/create_room">
+          <button class="btn btn-primary btn-full">Create Room</button>
+        </form>
+      </div>
+
+      <!-- Join room -->
+      <div class="card action-card">
+        <h2>Join a Room</h2>
+        <p>Enter a 6-digit room code to jump into an existing session.</p>
+        <form method="POST" action="/join" class="join-form">
+          <input type="text" name="room_id" maxlength="6" placeholder="Room code"
+                 class="input" pattern="\d{6}" title="6-digit room code" required />
+          <button class="btn btn-accent btn-full">Join</button>
+        </form>
+      </div>
+    </div>
+
+    {% else %}
+    <!-- ── Guest / login view ── -->
+    <div class="auth-grid">
+      <!-- Login -->
+      <div class="card auth-card">
+        <h2>Sign In</h2>
+        <form method="POST" action="/login" class="form-stack">
+          <input type="text"     name="username" placeholder="Username" class="input" required />
+          <input type="password" name="password" placeholder="Password" class="input" required />
+          <button class="btn btn-primary btn-full">Sign In</button>
+        </form>
+        <p class="form-footer">
+          No account? <a href="/register">Create one</a>
+        </p>
+      </div>
+
+      <!-- Quick access -->
+      <div class="card auth-card divider-card">
+        <h2>Quick Access</h2>
+        <p>Jump in as a guest — no sign-up needed.</p>
+        <form method="POST" action="/guest">
+          <button class="btn btn-outline btn-full">Continue as Guest</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</body>
+</html>

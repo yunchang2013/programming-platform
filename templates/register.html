@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register — CodeTogether</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="landing-page">
+  <div class="landing-container" style="max-width:420px">
+
+    <header class="landing-header">
+      <a href="/" class="logo" style="text-decoration:none">
+        <span class="logo-icon">⌨</span>
+        <span class="logo-text">CodeTogether</span>
+      </a>
+    </header>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <div class="card auth-card">
+      <h2>Create Account</h2>
+      <form method="POST" action="/register" class="form-stack">
+        <input type="text"     name="username" placeholder="Username" class="input" required />
+        <input type="email"    name="email"    placeholder="Email (optional)" class="input" />
+        <input type="password" name="password" placeholder="Password" class="input" required />
+        <button class="btn btn-primary btn-full">Create Account</button>
+      </form>
+      <p class="form-footer">Already have an account? <a href="/">Sign in</a></p>
+    </div>
+
+  </div>
+</body>
+</html>

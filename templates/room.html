@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Room {{ room_id }} — CodeTogether</title>
+
+  <!-- CodeMirror -->
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+
+  <!-- Socket.IO -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="room-page">
+
+  <!-- ── Top Bar ── -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="/" class="logo-small">⌨ CodeTogether</a>
+      <div class="room-badge">
+        Room <span id="roomIdText">{{ room_id }}</span>
+        <button class="copy-btn" onclick="copyRoomId()" title="Copy room code">⎘</button>
+      </div>
+      {% if is_host %}<span class="badge badge-host">Host</span>{% endif %}
+    </div>
+
+    <div class="topbar-center">
+      <button id="runBtn" class="btn btn-run" onclick="runCode()">
+        ▶ Run
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="clearOutput()">Clear output</button>
+    </div>
+
+    <div class="topbar-right">
+      <div class="user-pill">
+        <span class="user-dot"></span>
+        <span id="selfName">{{ username }}</span>
+        {% if user_type == 'guest' %}<span class="badge badge-guest">Guest</span>{% endif %}
+      </div>
+      <a href="/" class="btn btn-ghost btn-sm">Leave</a>
+    </div>
+  </header>
+
+  <!-- ── Main layout ── -->
+  <div class="room-layout">
+
+    <!-- Sidebar: users -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h3 class="sidebar-title">In this room</h3>
+        <ul id="userList" class="user-list"></ul>
+      </div>
+      <div class="sidebar-section sidebar-hint">
+        <p>Share the room code:<br /><strong>{{ room_id }}</strong></p>
+        <p style="margin-top:8px;font-size:11px;color:var(--muted)">
+          Anyone with this code can join and edit live.
+        </p>
+      </div>
+    </aside>
+
+    <!-- Editor -->
+    <main class="editor-pane">
+      <div class="pane-label">editor.py</div>
+      <div id="editorWrapper" class="editor-wrapper">
+        <textarea id="codeArea"></textarea>
+      </div>
+    </main>
+
+    <!-- Output -->
+    <section class="output-pane">
+      <div class="pane-label output-label">
+        output
+        <span id="runStatus" class="run-status"></span>
+      </div>
+      <pre id="outputArea" class="output-area"></pre>
+    </section>
+
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const ROOM_ID  = "{{ room_id }}";
+    const USERNAME = "{{ username }}";
+    const IS_HOST  = {{ 'true' if is_host else 'false' }};
+
+    // ── CodeMirror ──────────────────────────────────────────────────────────
+    const editor = CodeMirror.fromTextArea(document.getElementById("codeArea"), {
+      mode:              "python",
+      theme:             "dracula",
+      lineNumbers:       true,
+      indentUnit:        4,
+      tabSize:           4,
+      indentWithTabs:    false,
+      matchBrackets:     true,
+      autoCloseBrackets: true,
+      lineWrapping:      false,
+      extraKeys: {
+        "Tab": (cm) => cm.execCommand("indentMore"),
+        "Shift-Tab": (cm) => cm.execCommand("indentLess"),
+        "Ctrl-Enter": runCode,
+        "Ctrl-/": (cm) => cm.execCommand("toggleComment"),
+      },
+    });
+
+    // ── Socket.IO ───────────────────────────────────────────────────────────
+    const socket = io();
+    let suppressUpdate = false;
+
+    socket.on("connect", () => {
+      socket.emit("join", { room_id: ROOM_ID, username: USERNAME });
+    });
+
+    socket.on("sync", (data) => {
+      suppressUpdate = true;
+      editor.setValue(data.code);
+      suppressUpdate = false;
+      document.getElementById("outputArea").textContent = data.output;
+      renderUsers(data.users, data.host);
+    });
+
+    socket.on("code_update", (data) => {
+      if (data.by === USERNAME) return;
+      const cursor = editor.getCursor();
+      const scroll  = editor.getScrollInfo();
+      suppressUpdate = true;
+      editor.setValue(data.code);
+      suppressUpdate = false;
+      editor.setCursor(cursor);
+      editor.scrollTo(scroll.left, scroll.top);
+    });
+
+    socket.on("user_joined", (data) => {
+      renderUsers(data.users);
+      if (data.username !== USERNAME) showToast(`${data.username} joined`);
+    });
+
+    socket.on("user_left", (data) => {
+      renderUsers(data.users);
+      showToast(`${data.username} left`);
+    });
+
+    socket.on("run_start", (data) => {
+      document.getElementById("runStatus").textContent =
+        `▶ Running… (by ${data.by})`;
+      document.getElementById("runBtn").disabled = true;
+    });
+
+    socket.on("run_output", (data) => {
+      document.getElementById("outputArea").textContent =
+        data.output || "(no output)";
+      document.getElementById("runStatus").textContent = "";
+      document.getElementById("runBtn").disabled = false;
+    });
+
+    socket.on("error", (data) => showToast(data.message, true));
+
+    // ── Code change → emit ──────────────────────────────────────────────────
+    let changeTimer = null;
+    editor.on("change", () => {
+      if (suppressUpdate) return;
+      clearTimeout(changeTimer);
+      changeTimer = setTimeout(() => {
+        socket.emit("code_change", {
+          room_id:  ROOM_ID,
+          username: USERNAME,
+          code:     editor.getValue(),
+        });
+      }, 150);
+    });
+
+    // ── Actions ─────────────────────────────────────────────────────────────
+    function runCode() {
+      socket.emit("run_code", { room_id: ROOM_ID, username: USERNAME });
+    }
+
+    function clearOutput() {
+      socket.emit("clear_output", { room_id: ROOM_ID });
+    }
+
+    function copyRoomId() {
+      navigator.clipboard.writeText(ROOM_ID).then(() => showToast("Room code copied!"));
+    }
+
+    // ── UI helpers ──────────────────────────────────────────────────────────
+    function renderUsers(users, host) {
+      const ul = document.getElementById("userList");
+      ul.innerHTML = "";
+      users.forEach((u) => {
+        const li = document.createElement("li");
+        li.className = "user-item" + (u === USERNAME ? " self" : "");
+        li.innerHTML =
+          `<span class="user-dot"></span>${u}` +
+          (u === host ? ' <span class="badge badge-host" style="font-size:9px">host</span>' : "") +
+          (u === USERNAME ? " <em>(you)</em>" : "");
+        ul.appendChild(li);
+      });
+    }
+
+    let toastTimer;
+    function showToast(msg, isError = false) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = "toast" + (isError ? " toast-error" : "");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => (t.className = "toast hidden"), 3000);
+    }
+  </script>
+</body>
+</html>
