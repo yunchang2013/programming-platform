@@ -9,6 +9,8 @@ services:
         generateValue: true
       - key: DEBUG
         value: "false"
+      - key: NODE_VERSION
+        value: "20"
       - key: DB_PATH
         value: /data/platform.db
     disk:
