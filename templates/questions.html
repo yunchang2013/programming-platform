@@ -202,9 +202,6 @@ socket.on('solution_output', ({ text, done }) => {
     solRunning = false;
     inputRow.style.display = 'none';
     document.getElementById('runSolStatus').textContent = '';
-  } else {
-    inputRow.style.display = 'flex';
-    document.getElementById('solStdinInput').focus();
   }
 });
 

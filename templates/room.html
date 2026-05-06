@@ -101,6 +101,12 @@
             <span>shared output</span>
           </div>
           <pre id="sharedOutput" class="output-area" style="border-left:1px solid var(--border)"></pre>
+          <div id="sharedInputRow" style="display:none;border-top:1px solid var(--border);align-items:center;background:var(--surface)">
+            <span style="padding:0 8px;color:var(--green);font-size:13px;font-family:var(--mono)">›</span>
+            <input id="sharedStdinInput" class="input" placeholder="Type input and press Enter"
+              style="border:none;border-radius:0;background:transparent;flex:1;font-size:13px"
+              onkeydown="handleSharedInput(event)" />
+          </div>
         </div>
       </div>
     </div>
@@ -221,13 +227,27 @@ socket.on('user_left', data => {
 });
 
 socket.on('run_start', data => {
+  document.getElementById('sharedOutput').textContent = '';
   document.getElementById('runStatus').textContent = `▶ Running… (by ${data.by})`;
   document.getElementById('runBtn').disabled = true;
+  document.getElementById('sharedInputRow').style.display = 'flex';
+  document.getElementById('sharedStdinInput').focus();
+});
+socket.on('run_output_chunk', ({ text }) => {
+  const el = document.getElementById('sharedOutput');
+  el.textContent += text;
+  el.scrollTop = el.scrollHeight;
+});
+socket.on('run_done', () => {
+  document.getElementById('runStatus').textContent = '';
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('sharedInputRow').style.display = 'none';
 });
 socket.on('run_output', data => {
   document.getElementById('sharedOutput').textContent = data.output || '(no output)';
   document.getElementById('runStatus').textContent = '';
   document.getElementById('runBtn').disabled = false;
+  document.getElementById('sharedInputRow').style.display = 'none';
 });
 
 socket.on('personal_run_start', () => {
@@ -244,7 +264,6 @@ socket.on('personal_output_chunk', ({ text }) => {
   el.scrollTop = el.scrollHeight;
 });
 socket.on('personal_output', data => {
-  document.getElementById('personalOutput').textContent = data.output || '(no output)';
   document.getElementById('personalStatus').textContent = '';
   document.getElementById('personalRunBtn').disabled = false;
   document.getElementById('personalInputRow').style.display = 'none';
@@ -303,6 +322,12 @@ function handlePersonalInput(e) {
   if (e.key !== 'Enter') return;
   const input = document.getElementById('personalStdinInput');
   socket.emit('personal_stdin', { text: input.value });
+  input.value = '';
+}
+function handleSharedInput(e) {
+  if (e.key !== 'Enter') return;
+  const input = document.getElementById('sharedStdinInput');
+  socket.emit('shared_stdin', { room_id: ROOM_ID, text: input.value });
   input.value = '';
 }
 

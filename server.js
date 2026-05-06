@@ -764,14 +764,31 @@ io.on('connection', (socket) => {
     if (!PYTHON) { io.to(room_id).emit('run_output', { output: '[Error] Python 3 not found on this server.' }); return; }
     const code = rooms[room_id].code;
     io.to(room_id).emit('run_start', { by: username });
-    runPython(code, (err, stdout, stderr) => {
-      let out = stdout || '';
-      if (stderr) out += (out ? '\n' : '') + '[stderr]\n' + stderr;
-      if (err && err.killed) out = '[Error] Execution timed out (15s limit).';
-      else if (err && !stdout && !stderr) out = `[Error] ${err.message}`;
-      if (rooms[room_id]) { rooms[room_id].output = out; saveRoomToDB(room_id); }
-      io.to(room_id).emit('run_output', { output: out });
+    if (rooms[room_id]._sharedProc) { rooms[room_id]._sharedProc.kill(); rooms[room_id]._sharedProc = null; }
+    const { spawn } = require('child_process');
+    const child = spawn(PYTHON.cmd, [...PYTHON.args, '-c', code], { windowsHide: true });
+    rooms[room_id]._sharedProc = child;
+    let out = '';
+    child.stdout.on('data', d => { out += d.toString(); io.to(room_id).emit('run_output_chunk', { text: d.toString() }); });
+    child.stderr.on('data', d => { out += d.toString(); io.to(room_id).emit('run_output_chunk', { text: '[stderr] ' + d.toString() }); });
+    child.on('close', () => {
+      if (rooms[room_id]) { rooms[room_id]._sharedProc = null; rooms[room_id].output = out; saveRoomToDB(room_id); }
+      io.to(room_id).emit('run_done', { output: out || '(no output)' });
     });
+    child.on('error', err => io.to(room_id).emit('run_done', { output: `[Error] ${err.message}` }));
+    setTimeout(() => {
+      if (rooms[room_id] && rooms[room_id]._sharedProc) {
+        rooms[room_id]._sharedProc.kill(); rooms[room_id]._sharedProc = null;
+        io.to(room_id).emit('run_done', { output: out + '\n[Error] Timed out (15s).' });
+      }
+    }, 15_000);
+  });
+
+  socket.on('shared_stdin', ({ room_id, text }) => {
+    if (rooms[room_id] && rooms[room_id]._sharedProc) {
+      io.to(room_id).emit('run_output_chunk', { text: text + '\n' });
+      rooms[room_id]._sharedProc.stdin.write(text + '\n');
+    }
   });
 
   socket.on('run_personal', ({ code }) => {
