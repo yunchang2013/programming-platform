@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — CodeTogether</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="dash-page">
+
+<header class="dash-header">
+  <a href="/" class="logo-small">⌨ CodeTogether</a>
+  <nav class="dash-nav">
+    <button class="dash-tab active" data-tab="users">Users</button>
+    <button class="dash-tab" data-tab="questions">Questions</button>
+    <button class="dash-tab" data-tab="scoring">Scoring Criteria</button>
+    <button class="dash-tab" data-tab="submissions">Submissions</button>
+  </nav>
+  <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+    <span style="color:var(--muted)">{{ username }}</span>
+    {% if is_admin %}<span class="badge badge-host">Admin</span>{% endif %}
+    <a href="/scores" class="btn btn-ghost btn-sm">My Scores</a>
+    <a href="/" class="btn btn-ghost btn-sm">Home</a>
+  </div>
+</header>
+
+<main class="dash-main">
+
+  <!-- ── Users Tab ── -->
+  <section id="tab-users" class="dash-section">
+    <div class="dash-section-head">
+      <h2>Registered Users</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table">
+        <thead><tr>
+          <th>Username</th><th>Email</th><th>Logins</th>
+          <th>Last Login</th><th>Submissions</th><th>Total Score</th>
+          {% if is_admin %}<th>Admin</th>{% endif %}
+        </tr></thead>
+        <tbody>
+          {% for u in registeredUsers %}
+          <tr>
+            <td><strong>{{ u.username }}</strong></td>
+            <td style="color:var(--muted)">{{ u.email or '—' }}</td>
+            <td>{{ u.login_count }}</td>
+            <td style="color:var(--muted);font-size:11px">{{ u.last_login or '—' }}</td>
+            <td>{{ u.submission_count }}</td>
+            <td style="color:var(--green)">{{ u.total_score | round(1) }}</td>
+            {% if is_admin %}
+            <td>
+              <button class="btn btn-sm {% if u.is_admin %}btn-primary{% else %}btn-outline{% endif %}"
+                onclick="toggleAdmin({{ u.id }}, this)">
+                {{ 'Admin' if u.is_admin else 'User' }}
+              </button>
+            </td>
+            {% endif %}
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align:center;color:var(--muted)">No registered users yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if guestUsers.length %}
+    <div class="dash-section-head" style="margin-top:28px">
+      <h2>Guest Sessions (recent 100)</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table">
+        <thead><tr><th>Guest Name</th><th>Sessions</th><th>Last Seen</th></tr></thead>
+        <tbody>
+          {% for g in guestUsers %}
+          <tr>
+            <td>{{ g.username }}</td>
+            <td>{{ g.login_count }}</td>
+            <td style="color:var(--muted);font-size:11px">{{ g.last_login }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ── Questions Tab ── -->
+  <section id="tab-questions" class="dash-section hidden">
+    <div class="dash-section-head">
+      <h2>Questions</h2>
+      <button class="btn btn-primary btn-sm" onclick="openQModal()">+ Add Question</button>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table" id="questionsTable">
+        <thead><tr>
+          <th>Title</th><th>Time Limit</th><th>Max Points</th>
+          <th>By</th><th>Submissions</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody>
+          {% for q in questions %}
+          <tr id="qrow-{{ q.id }}">
+            <td><strong>{{ q.title }}</strong></td>
+            <td>{{ q.time_limit ~ 's' if q.time_limit else 'Unlimited' }}</td>
+            <td>{{ q.max_points }}</td>
+            <td style="color:var(--muted)">{{ q.created_by }}</td>
+            <td>{{ q.sub_count }}</td>
+            <td>
+              <span class="badge {% if q.is_active %}badge-active{% else %}badge-inactive{% endif %}">
+                {{ 'Active' if q.is_active else 'Inactive' }}
+              </span>
+            </td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm btn-outline" onclick="editQuestion({{ q.id }})">Edit</button>
+              <button class="btn btn-sm btn-outline" onclick="manageCriteria({{ q.id }}, '{{ q.title | replace("'","\\'")}}')" style="color:var(--yellow);border-color:var(--yellow)">Criteria</button>
+              <button class="btn btn-sm btn-outline" onclick="viewSubmissions({{ q.id }}, '{{ q.title | replace("'","\\'")}}')" style="color:var(--accent);border-color:var(--accent)">Results</button>
+              <button class="btn btn-sm btn-outline" onclick="deleteQuestion({{ q.id }})" style="color:var(--red);border-color:var(--red)">Delete</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align:center;color:var(--muted)">No questions yet. Create one above.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Scoring Criteria Tab ── -->
+  <section id="tab-scoring" class="dash-section hidden">
+    <div class="dash-section-head">
+      <h2>Global Scoring Criteria</h2>
+      <button class="btn btn-primary btn-sm" onclick="addGlobalCriterion()">+ Add Row</button>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:16px">
+      Applied to any question that has no custom criteria. Scores are assigned by finding the highest
+      similarity threshold the submission meets.
+    </p>
+    <div class="table-wrap">
+      <table class="dash-table">
+        <thead><tr><th>Min Similarity (%)</th><th>Score (points)</th><th></th></tr></thead>
+        <tbody id="globalCriteriaBody">
+          {% for c in globalCriteria %}
+          <tr id="gc-{{ c.id }}">
+            <td>{{ (c.min_similarity * 100) | round(1) }}%</td>
+            <td>{{ c.score }}</td>
+            <td><button class="btn btn-sm btn-outline" onclick="deleteGlobalCriterion({{ c.id }})"
+              style="color:var(--red);border-color:var(--red)">Remove</button></td>
+          </tr>
+          {% else %}
+          <tr id="gc-empty"><td colspan="3" style="text-align:center;color:var(--muted)">
+            No global criteria. Add rows above.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Submissions Tab ── -->
+  <section id="tab-submissions" class="dash-section hidden">
+    <div class="dash-section-head">
+      <h2>All Submissions</h2>
+      <input id="subFilter" class="input" style="width:220px;font-size:12px" placeholder="Filter by username…" oninput="filterSubs()" />
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table" id="subsTable">
+        <thead><tr>
+          <th>Username</th><th>Question</th><th>Score</th>
+          <th>Similarity</th><th>Submitted At</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for s in submissions %}
+          <tr class="sub-row" data-user="{{ s.username | lower }}">
+            <td>{{ s.username }}</td>
+            <td style="color:var(--muted)">{{ s.q_title }}</td>
+            <td style="color:var(--green)"><strong>{{ s.score }}</strong> / {{ s.max_score }}</td>
+            <td>{{ (s.similarity * 100) | round(1) }}%</td>
+            <td style="color:var(--muted);font-size:11px">{{ s.submitted_at }}</td>
+            <td><button class="btn btn-sm btn-ghost" onclick="toggleCode(this)" data-code="{{ s.code | replace('\n','\\n') | replace('\"','&quot;') }}" data-output="{{ s.output | replace('\n','\\n') | replace('\"','&quot;') }}">View</button></td>
+          </tr>
+          <tr class="code-preview hidden">
+            <td colspan="6">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div>
+                  <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Code</div>
+                  <pre class="code-preview-block preview-code"></pre>
+                </div>
+                <div>
+                  <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Output</div>
+                  <pre class="code-preview-block preview-output"></pre>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;color:var(--muted)">No submissions yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Question Modal ── -->
+<div id="qModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="qModalTitle">Add Question</h3>
+      <button class="copy-btn" onclick="closeQModal()" style="font-size:20px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="qId" value="" />
+      <div class="form-row">
+        <label>Title *</label>
+        <input id="qTitle" class="input" placeholder="e.g. Print Hello World" />
+      </div>
+      <div class="form-row">
+        <label>Description</label>
+        <textarea id="qDesc" class="input" rows="3" placeholder="Instructions for students…"></textarea>
+      </div>
+      <div class="form-row">
+        <label>Expected Output *</label>
+        <textarea id="qExpected" class="input" rows="3" placeholder="Exact expected program output…" style="font-family:var(--mono);color:var(--green)"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row">
+          <label>Time Limit (seconds, 0 = none)</label>
+          <input id="qTimeLimit" class="input" type="number" min="0" value="0" />
+        </div>
+        <div class="form-row">
+          <label>Max Points</label>
+          <input id="qMaxPoints" class="input" type="number" min="0" step="0.5" value="10" />
+        </div>
+      </div>
+      <div id="qError" class="alert alert-error hidden"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeQModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveQuestion()">Save Question</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Criteria Modal ── -->
+<div id="cModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="cModalTitle">Custom Criteria</h3>
+      <button class="copy-btn" onclick="closeCModal()" style="font-size:20px">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        Leave empty to use global criteria. Add rows below to override for this question only.
+        Scores are matched by finding the highest threshold the submission meets.
+      </p>
+      <input type="hidden" id="cQId" />
+      <table class="dash-table" id="cTable">
+        <thead><tr><th>Min Similarity (%)</th><th>Score (points)</th><th></th></tr></thead>
+        <tbody id="cBody"></tbody>
+      </table>
+      <button class="btn btn-sm btn-outline" style="margin-top:10px" onclick="addCriteriaRow()">+ Add Row</button>
+      <div id="cError" class="alert alert-error hidden" style="margin-top:10px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeCModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCriteria()">Save Criteria</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Submissions Modal ── -->
+<div id="sModal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:860px">
+    <div class="modal-head">
+      <h3 id="sModalTitle">Submissions</h3>
+      <button class="copy-btn" onclick="document.getElementById('sModal').classList.add('hidden')" style="font-size:20px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrap">
+        <table class="dash-table">
+          <thead><tr><th>Username</th><th>Score</th><th>Similarity</th><th>Submitted At</th><th></th></tr></thead>
+          <tbody id="sBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Global Criterion Modal ── -->
+<div id="gcModal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-head">
+      <h3>Add Global Criterion</h3>
+      <button class="copy-btn" onclick="document.getElementById('gcModal').classList.add('hidden')" style="font-size:20px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>Min Similarity (0–100%)</label>
+        <input id="gcSim" class="input" type="number" min="0" max="100" step="1" placeholder="e.g. 50" />
+      </div>
+      <div class="form-row">
+        <label>Score (points awarded)</label>
+        <input id="gcScore" class="input" type="number" min="0" step="0.5" placeholder="e.g. 5" />
+      </div>
+      <div id="gcError" class="alert alert-error hidden"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="document.getElementById('gcModal').classList.add('hidden')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveGlobalCriterion()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.dash-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.dash-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.dash-section').forEach(s => s.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (err ? ' toast-error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast hidden', 3000);
+}
+
+// ── Admin toggle ──────────────────────────────────────────────────────────────
+async function toggleAdmin(userId, btn) {
+  const r = await fetch(`/dashboard/users/${userId}/toggle-admin`, { method: 'POST' });
+  const d = await r.json();
+  if (d.error) { showToast(d.error, true); return; }
+  btn.textContent = d.is_admin ? 'Admin' : 'User';
+  btn.className = 'btn btn-sm ' + (d.is_admin ? 'btn-primary' : 'btn-outline');
+  showToast(d.is_admin ? 'Promoted to admin.' : 'Revoked admin.');
+}
+
+// ── Question Modal ────────────────────────────────────────────────────────────
+function openQModal(q = null) {
+  document.getElementById('qId').value       = q ? q.id : '';
+  document.getElementById('qTitle').value    = q ? q.title : '';
+  document.getElementById('qDesc').value     = q ? q.description : '';
+  document.getElementById('qExpected').value = q ? q.expected_output : '';
+  document.getElementById('qTimeLimit').value= q ? q.time_limit : 0;
+  document.getElementById('qMaxPoints').value= q ? q.max_points : 10;
+  document.getElementById('qModalTitle').textContent = q ? 'Edit Question' : 'Add Question';
+  document.getElementById('qError').classList.add('hidden');
+  document.getElementById('qModal').classList.remove('hidden');
+}
+function closeQModal() { document.getElementById('qModal').classList.add('hidden'); }
+
+async function editQuestion(id) {
+  const r = await fetch(`/dashboard/questions/${id}/criteria`);
+  // Just need the question — fetch from the row
+  const row = document.getElementById('qrow-' + id);
+  const cells = row.querySelectorAll('td');
+  openQModal({
+    id,
+    title:           cells[0].querySelector('strong').textContent,
+    description:     '',
+    expected_output: '',
+    time_limit:      0,
+    max_points:      parseFloat(cells[2].textContent),
+  });
+  // We don't have all fields client-side; open modal with what we have
+  // The user can fill in expected_output if they want to change it
+  document.getElementById('qExpected').placeholder = 'Leave blank to keep existing expected output';
+}
+
+async function saveQuestion() {
+  const id    = document.getElementById('qId').value;
+  const title = document.getElementById('qTitle').value.trim();
+  const expected_output = document.getElementById('qExpected').value;
+  const errEl = document.getElementById('qError');
+  if (!title) { errEl.textContent = 'Title is required.'; errEl.classList.remove('hidden'); return; }
+  if (!id && !expected_output.trim()) {
+    errEl.textContent = 'Expected output is required for new questions.';
+    errEl.classList.remove('hidden'); return;
+  }
+  const body = {
+    title,
+    description:     document.getElementById('qDesc').value,
+    time_limit:      document.getElementById('qTimeLimit').value,
+    max_points:      document.getElementById('qMaxPoints').value,
+  };
+  if (expected_output.trim()) body.expected_output = expected_output;
+  let r;
+  if (id) {
+    r = await fetch(`/dashboard/questions/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  } else {
+    if (!body.expected_output) { errEl.textContent = 'Expected output required.'; errEl.classList.remove('hidden'); return; }
+    r = await fetch('/dashboard/questions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  }
+  const d = await r.json();
+  if (d.error) { errEl.textContent = d.error; errEl.classList.remove('hidden'); return; }
+  closeQModal();
+  showToast(id ? 'Question updated.' : 'Question created.');
+  setTimeout(() => location.reload(), 800);
+}
+
+async function deleteQuestion(id) {
+  if (!confirm('Delete this question and all its submissions?')) return;
+  const r = await fetch(`/dashboard/questions/${id}`, { method: 'DELETE' });
+  const d = await r.json();
+  if (d.error) { showToast(d.error, true); return; }
+  document.getElementById('qrow-' + id)?.remove();
+  showToast('Question deleted.');
+}
+
+// ── Criteria Modal ────────────────────────────────────────────────────────────
+async function manageCriteria(qId, title) {
+  document.getElementById('cQId').value = qId;
+  document.getElementById('cModalTitle').textContent = `Criteria: ${title}`;
+  document.getElementById('cError').classList.add('hidden');
+  const r = await fetch(`/dashboard/questions/${qId}/criteria`);
+  const criteria = await r.json();
+  const body = document.getElementById('cBody');
+  body.innerHTML = '';
+  if (criteria.length === 0) {
+    body.innerHTML = '<tr id="c-empty"><td colspan="3" style="color:var(--muted);text-align:center">Using global criteria. Add rows to override.</td></tr>';
+  } else {
+    criteria.forEach(c => addCriteriaRowData(c.min_similarity * 100, c.score));
+  }
+  document.getElementById('cModal').classList.remove('hidden');
+}
+function closeCModal() { document.getElementById('cModal').classList.add('hidden'); }
+
+function addCriteriaRow() {
+  document.getElementById('c-empty')?.remove();
+  addCriteriaRowData('', '');
+}
+function addCriteriaRowData(sim, score) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="input c-sim" type="number" min="0" max="100" step="1" value="${sim}" placeholder="e.g. 50" style="width:100px" /></td>
+    <td><input class="input c-score" type="number" min="0" step="0.5" value="${score}" placeholder="e.g. 5" style="width:100px" /></td>
+    <td><button class="btn btn-sm btn-outline" onclick="this.closest('tr').remove()" style="color:var(--red);border-color:var(--red)">Remove</button></td>
+  `;
+  document.getElementById('cBody').appendChild(tr);
+}
+
+async function saveCriteria() {
+  const qId = document.getElementById('cQId').value;
+  const sims   = [...document.querySelectorAll('#cBody .c-sim')].map(i => parseFloat(i.value));
+  const scores = [...document.querySelectorAll('#cBody .c-score')].map(i => parseFloat(i.value));
+  const criteria = sims.map((s, i) => ({ min_similarity: s / 100, score: scores[i] }))
+    .filter(c => !isNaN(c.min_similarity) && !isNaN(c.score));
+  const r = await fetch(`/dashboard/questions/${qId}/criteria`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ criteria }),
+  });
+  const d = await r.json();
+  if (d.error) { const e = document.getElementById('cError'); e.textContent = d.error; e.classList.remove('hidden'); return; }
+  closeCModal();
+  showToast('Criteria saved.');
+}
+
+// ── Global criteria ───────────────────────────────────────────────────────────
+function addGlobalCriterion() {
+  document.getElementById('gcSim').value   = '';
+  document.getElementById('gcScore').value = '';
+  document.getElementById('gcError').classList.add('hidden');
+  document.getElementById('gcModal').classList.remove('hidden');
+}
+
+async function saveGlobalCriterion() {
+  const sim   = parseFloat(document.getElementById('gcSim').value);
+  const score = parseFloat(document.getElementById('gcScore').value);
+  const errEl = document.getElementById('gcError');
+  if (isNaN(sim) || isNaN(score) || sim < 0 || sim > 100) {
+    errEl.textContent = 'Enter a valid similarity (0–100) and score.';
+    errEl.classList.remove('hidden'); return;
+  }
+  const r = await fetch('/dashboard/scoring-criteria', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ min_similarity: sim / 100, score }),
+  });
+  const d = await r.json();
+  if (d.error) { errEl.textContent = d.error; errEl.classList.remove('hidden'); return; }
+  document.getElementById('gcModal').classList.add('hidden');
+  document.getElementById('gc-empty')?.remove();
+  const tr = document.createElement('tr');
+  tr.id = `gc-${d.id}`;
+  tr.innerHTML = `<td>${sim}%</td><td>${score}</td>
+    <td><button class="btn btn-sm btn-outline" onclick="deleteGlobalCriterion(${d.id})"
+      style="color:var(--red);border-color:var(--red)">Remove</button></td>`;
+  document.getElementById('globalCriteriaBody').appendChild(tr);
+  showToast('Global criterion added.');
+}
+
+async function deleteGlobalCriterion(id) {
+  await fetch(`/dashboard/scoring-criteria/${id}`, { method: 'DELETE' });
+  document.getElementById(`gc-${id}`)?.remove();
+  showToast('Criterion removed.');
+}
+
+// ── View submissions for a question ──────────────────────────────────────────
+async function viewSubmissions(qId, title) {
+  document.getElementById('sModalTitle').textContent = `Results: ${title}`;
+  document.getElementById('sBody').innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr>';
+  document.getElementById('sModal').classList.remove('hidden');
+  const r = await fetch(`/dashboard/questions/${qId}/submissions`);
+  const data = await r.json();
+  const body = document.getElementById('sBody');
+  if (!data.length) {
+    body.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">No submissions yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = data.map(s => `
+    <tr>
+      <td>${s.username}</td>
+      <td style="color:var(--green)"><strong>${s.score}</strong> / ${s.max_score}</td>
+      <td>${Math.round(s.similarity * 100)}%</td>
+      <td style="color:var(--muted);font-size:11px">${s.submitted_at}</td>
+      <td><button class="btn btn-sm btn-ghost" onclick="this.closest('tr').nextElementSibling.classList.toggle('hidden')">View Code</button></td>
+    </tr>
+    <tr class="hidden">
+      <td colspan="5">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px">CODE</div>
+            <pre class="code-preview-block">${escHtml(s.code)}</pre></div>
+          <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px">OUTPUT</div>
+            <pre class="code-preview-block">${escHtml(s.output)}</pre></div>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ── Submission code toggle (inline table) ─────────────────────────────────────
+function toggleCode(btn) {
+  const previewRow = btn.closest('tr').nextElementSibling;
+  previewRow.classList.toggle('hidden');
+  if (!previewRow.classList.contains('hidden')) {
+    previewRow.querySelector('.preview-code').textContent   = btn.dataset.code.replace(/\\n/g, '\n');
+    previewRow.querySelector('.preview-output').textContent = btn.dataset.output.replace(/\\n/g, '\n');
+  }
+}
+
+// ── Submission filter ─────────────────────────────────────────────────────────
+function filterSubs() {
+  const val = document.getElementById('subFilter').value.toLowerCase();
+  document.querySelectorAll('#subsTable .sub-row').forEach(row => {
+    const match = row.dataset.user.includes(val);
+    row.style.display = match ? '' : 'none';
+    row.nextElementSibling.style.display = 'none'; // hide expanded
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

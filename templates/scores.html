@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Scores — CodeTogether</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="dash-page">
+
+<header class="dash-header">
+  <a href="/" class="logo-small">⌨ CodeTogether</a>
+  <div style="display:flex;align-items:center;gap:10px;font-size:13px">
+    <span style="color:var(--muted)">{{ username }}</span>
+    {% if user_type == 'guest' %}<span class="badge badge-guest">Guest</span>{% endif %}
+    {% if user_type != 'guest' %}<a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>{% endif %}
+    <a href="/" class="btn btn-ghost btn-sm">Home</a>
+  </div>
+</header>
+
+<main class="dash-main">
+  <div id="loadMsg" style="color:var(--muted);padding:40px;text-align:center">Loading scores…</div>
+
+  <!-- Daily summary -->
+  <section id="dailySection" class="dash-section hidden">
+    <div class="dash-section-head">
+      <h2>Daily Score Summary</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table">
+        <thead><tr>
+          <th>Date</th><th>Total Score</th><th>Submissions</th><th>Questions Attempted</th>
+        </tr></thead>
+        <tbody id="dailyBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- All submissions -->
+  <section id="allSection" class="dash-section hidden" style="margin-top:28px">
+    <div class="dash-section-head">
+      <h2>All Submissions</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table">
+        <thead><tr>
+          <th>Question</th><th>Score</th><th>Similarity</th><th>Submitted At</th><th></th>
+        </tr></thead>
+        <tbody id="allBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div id="emptyMsg" class="hidden" style="color:var(--muted);padding:60px;text-align:center">
+    No submissions yet. Join a room and answer a question to see your scores here.
+  </div>
+</main>
+
+<script>
+async function load() {
+  const r = await fetch('/scores/data');
+  const { submissions, daily } = await r.json();
+
+  document.getElementById('loadMsg').classList.add('hidden');
+
+  if (!submissions.length) {
+    document.getElementById('emptyMsg').classList.remove('hidden');
+    return;
+  }
+
+  // Daily
+  const dailyBody = document.getElementById('dailyBody');
+  daily.forEach(d => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${d.date}</strong></td>
+      <td style="color:var(--green);font-size:15px"><strong>${+d.total_score.toFixed(2)}</strong></td>
+      <td>${d.count}</td>
+      <td>${d.questions_attempted}</td>
+    `;
+    dailyBody.appendChild(tr);
+  });
+  document.getElementById('dailySection').classList.remove('hidden');
+
+  // All submissions
+  const allBody = document.getElementById('allBody');
+  submissions.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${esc(s.q_title)}</strong></td>
+      <td style="color:var(--green)"><strong>${s.score}</strong> / ${s.max_points}</td>
+      <td>${Math.round(s.similarity * 100)}%</td>
+      <td style="color:var(--muted);font-size:11px">${s.submitted_at}</td>
+      <td><button class="btn btn-sm btn-ghost" onclick="togglePreview(this, ${JSON.stringify(esc(s.code))}, ${JSON.stringify(esc(s.output))})">View Code</button></td>
+    `;
+    allBody.appendChild(tr);
+
+    const preview = document.createElement('tr');
+    preview.className = 'hidden';
+    preview.innerHTML = `
+      <td colspan="5">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Code</div>
+            <pre class="code-preview-block preview-code"></pre></div>
+          <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Output</div>
+            <pre class="code-preview-block preview-output"></pre></div>
+        </div>
+      </td>
+    `;
+    allBody.appendChild(preview);
+  });
+  document.getElementById('allSection').classList.remove('hidden');
+}
+
+function togglePreview(btn, code, output) {
+  const row = btn.closest('tr').nextElementSibling;
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) {
+    row.querySelector('.preview-code').textContent   = code;
+    row.querySelector('.preview-output').textContent = output;
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+load();
+</script>
+</body>
+</html>

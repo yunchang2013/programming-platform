@@ -28,7 +28,11 @@
         <span>Welcome, <strong>{{ username }}</strong>
           {% if user_type == 'guest' %}<span class="badge badge-guest">Guest</span>{% endif %}
         </span>
-        <a href="/logout" class="btn btn-ghost btn-sm">Sign out</a>
+        <div style="display:flex;gap:8px;align-items:center">
+          <a href="/scores" class="btn btn-ghost btn-sm">My Scores</a>
+          {% if user_type != 'guest' %}<a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>{% endif %}
+          <a href="/logout" class="btn btn-ghost btn-sm">Sign out</a>
+        </div>
       </div>
     </div>
 
