@@ -61,6 +61,11 @@
               <button class="btn btn-sm btn-outline">Restore &amp; Rejoin</button>
             </form>
           {% endif %}
+          <form method="POST" action="/delete_room" style="display:inline"
+                onsubmit="return confirm('Delete room {{ r.room_id }}? This cannot be undone.')">
+            <input type="hidden" name="room_id" value="{{ r.room_id }}" />
+            <button class="btn btn-sm" style="color:var(--red);border:1px solid var(--red);background:transparent">Delete</button>
+          </form>
         </div>
       </div>
       {% endfor %}

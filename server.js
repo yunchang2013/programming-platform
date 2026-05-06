@@ -332,6 +332,26 @@ app.post('/create_room', requireAuth, (req, res) => {
   return res.redirect(`/room/${roomId}`);
 });
 
+app.post('/delete_room', requireAuth, (req, res) => {
+  const { room_id, redirect: redirectTo } = req.body;
+  const username = currentUser(req);
+  const saved = db.prepare('SELECT host FROM rooms_db WHERE room_id=?').get(room_id);
+  if (saved && saved.host !== username && !getIsAdmin(req))
+    return res.status(403).send('Not authorised.');
+  // Kick everyone out of the live room
+  if (rooms[room_id]) {
+    io.to(room_id).emit('error', { message: 'This room has been deleted by the host.' });
+    if (rooms[room_id].questionTimer) clearTimeout(rooms[room_id].questionTimer);
+    if (rooms[room_id].timerInterval) clearInterval(rooms[room_id].timerInterval);
+    delete rooms[room_id];
+  }
+  // Wipe from DB
+  db.prepare('DELETE FROM rooms_db WHERE room_id=?').run(room_id);
+  db.prepare('DELETE FROM room_participants WHERE room_id=?').run(room_id);
+  db.prepare('DELETE FROM submissions WHERE room_id=?').run(room_id);
+  return res.redirect(redirectTo || '/');
+});
+
 app.post('/restore_room', requireAuth, (req, res) => {
   const { room_id } = req.body;
   const saved = db.prepare('SELECT * FROM rooms_db WHERE room_id=?').get(room_id);
@@ -613,13 +633,30 @@ app.get('/room/:room_id/report', requireAuth, (req, res) => {
   `).all(room_id, room_id);
 
   // All submissions for this room grouped by participant
-  const submissions = db.prepare(`
+  const submissionRows = db.prepare(`
     SELECT s.*, q.title AS q_title, q.max_points
     FROM submissions s
     JOIN questions q ON q.id=s.question_id
     WHERE s.room_id=?
     ORDER BY s.username, s.submitted_at DESC
   `).all(room_id);
+
+  // Convert database rows to plain objects for JSON serialization
+  const submissions = submissionRows.map(row => ({
+    id: row.id,
+    username: row.username,
+    question_id: row.question_id,
+    room_id: row.room_id,
+    code: row.code || '',
+    output: row.output || '',
+    expected_output: row.expected_output || '',
+    similarity: row.similarity || 0,
+    score: row.score || 0,
+    max_score: row.max_score || 0,
+    submitted_at: row.submitted_at || '',
+    q_title: row.q_title || '',
+    max_points: row.max_points || 0
+  }));
 
   // Current live users
   const liveUsers = new Set(rooms[room_id] ? Object.values(rooms[room_id].users) : []);

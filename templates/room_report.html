@@ -58,11 +58,10 @@
         </tr></thead>
         <tbody>
           {% for p in participants %}
-          {% set isLive = p.username in liveUsers %}
           <tr class="participant-row" onclick="toggleParticipant('p{{ loop.index }}', this)">
             <td><strong>{{ p.username }}</strong></td>
             <td>
-              {% if isLive %}
+              {% if p.username in liveUsers %}
                 <span style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12px">
                   <span class="user-dot"></span> Live
                 </span>
@@ -71,9 +70,9 @@
               {% endif %}
             </td>
             <td class="today-score-cell" data-username="{{ p.username }}">
-              <strong style="color:var(--green);font-size:15px">{{ p.today_score | round(2) }}</strong>
+              <strong style="color:var(--green);font-size:15px">{{ p.today_score }}</strong>
             </td>
-            <td style="color:var(--muted)">{{ p.total_score | round(2) }}</td>
+            <td style="color:var(--muted)">{{ p.total_score }}</td>
             <td>{{ p.questions_done }}</td>
             <td>{{ p.sub_count }}</td>
             <td style="color:var(--muted);font-size:18px">▾</td>
@@ -112,12 +111,30 @@
 
 </main>
 
+<!-- Solution modal -->
+<div id="solutionModal" class="modal-overlay hidden" onclick="if(event.target===this)closeSolution()">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-head">
+      <h3 id="modalTitle">Submission</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeSolution()">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Code</div>
+        <pre id="modalCode" class="code-preview-block" style="color:var(--text);max-height:400px"></pre>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Output</div>
+        <pre id="modalOutput" class="code-preview-block" style="color:var(--green);max-height:400px"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
 <!-- Submission data injected from server -->
-<script type="application/json" id="submissions-data">
-{{ submissions | dump }}
-</script>
+<script type="application/json" id="submissions-data">{{ submissions | dump | safe }}</script>
 
 <script>
 
@@ -142,61 +159,32 @@ function makeSubRow(s) {
   const tr = document.createElement('tr');
   tr.id = 'subrow-' + s.id;
   tr.innerHTML = `
-    <td style="color:var(--muted)">${esc(s.q_title)}</td>
-    <td><span class="score-val" id="score-${s.id}" style="color:var(--green);font-weight:700;cursor:pointer" title="Click to view code">${s.score}</span></td>
-    <td style="color:var(--muted)">${s.max_points}</td>
-    <td>${Math.round(s.similarity * 100)}%</td>
+    <td style="color:var(--muted)">${esc(s.q_title || 'Question #' + s.question_id)}</td>
+    <td><span class="score-val" id="score-${s.id}" style="color:var(--green);font-weight:700">${s.score}</span></td>
+    <td style="color:var(--muted)">${s.max_points ?? s.max_score ?? 10}</td>
+    <td>${Math.round((s.similarity ?? 0) * 100)}%</td>
     <td style="color:var(--muted);font-size:11px">${s.submitted_at}</td>
-    <td>
+    <td style="display:flex;gap:6px;align-items:center">
+      <button class="btn btn-sm btn-outline" onclick="openSolution(${s.id})"
+        style="font-size:11px">View</button>
       <div class="score-edit-wrap" id="edit-${s.id}">
         <button class="btn btn-sm btn-outline" onclick="startEdit(${s.id}, ${s.score})"
           style="font-size:11px;color:var(--yellow);border-color:var(--yellow)">Edit</button>
       </div>
     </td>
   `;
-  // Add expandable code/output sub-row
-  const ctr = document.createElement('tr');
-  ctr.className = 'hidden';
-  ctr.id = 'code-' + s.id;
-  ctr.innerHTML = `
-    <td colspan="6" style="padding:0 0 8px 24px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Code</div>
-          <pre class="code-preview-block" style="color:var(--text)">${esc(s.code)}</pre></div>
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Output</div>
-          <pre class="code-preview-block" style="color:var(--green)">${esc(s.output)}</pre></div>
-      </div>
-    </td>
-  `;
-  // Make score cell clickable to toggle code
-  const scoreCell = tr.querySelector('.score-val');
-  scoreCell.onclick = (e) => {
-    e.stopPropagation();
-    ctr.classList.toggle('hidden');
-  };
-  tr._codeRow = ctr;
+  tr._codeRow = null;
   return tr;
 }
 
 // ── Populate submission rows on DOM ready ─────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Populate all submission rows for each user
   Object.entries(subsByUser).forEach(([username, subs]) => {
-    // Normalize username the same way the server does
     const normalized = username.replace(/\s+/g, '_').replace(/['"]/g, '');
     const tbody = document.getElementById('subs-' + normalized);
-    if (!tbody) {
-      console.warn('Could not find tbody for user:', username, 'normalized:', normalized);
-      return;
-    }
+    if (!tbody) return;
     tbody.innerHTML = '';
-    
-    subs.forEach(s => {
-      const row = makeSubRow(s);
-      tbody.appendChild(row);
-      // Insert code row right after submission row
-      tbody.appendChild(row._codeRow);
-    });
+    subs.forEach(s => tbody.appendChild(makeSubRow(s)));
   });
 });
 
@@ -294,6 +282,20 @@ function recalcUserTotal(subId, newScore) {
     document.getElementById('avgScore').textContent =
       (allTotals.reduce((a,b)=>a+b,0) / allTotals.length).toFixed(1);
   }
+}
+
+// ── Solution modal ───────────────────────────────────────────────────────────
+function openSolution(subId) {
+  const s = SUBMISSIONS.find(s => s.id === subId);
+  if (!s) return;
+  document.getElementById('modalTitle').textContent =
+    (s.q_title || 'Question #' + s.question_id) + ' — ' + s.username;
+  document.getElementById('modalCode').textContent   = s.code   || '(empty)';
+  document.getElementById('modalOutput').textContent = s.output || '(no output)';
+  document.getElementById('solutionModal').classList.remove('hidden');
+}
+function closeSolution() {
+  document.getElementById('solutionModal').classList.add('hidden');
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
