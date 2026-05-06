@@ -13,6 +13,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="dash-page">
@@ -120,15 +121,19 @@
         <div id="solutionEditorWrap" class="q-code-wrap">
           <textarea id="solutionCode"></textarea>
         </div>
-        <div style="margin-top:8px">
-          <label class="q-section-label" style="margin-bottom:4px;display:block">Stdin inputs <span style="color:var(--muted);font-size:11px;font-weight:400">(one value per line — fed to input() calls)</span></label>
-          <textarea id="fStdin" class="input" rows="3" placeholder="e.g.&#10;5&#10;hello world" style="font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
-        </div>
       </div>
 
       <div class="q-section" id="solOutputSection">
         <label class="q-section-label" style="margin-bottom:6px;display:block">Solution Output <span style="color:var(--muted);font-size:11px;font-weight:400">(auto-generated — this is what students must match)</span></label>
-        <pre id="solOutput" class="code-preview-block" style="color:var(--green);min-height:40px">(run solution to generate output)</pre>
+        <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+          <pre id="solOutput" class="output-area" style="min-height:80px;max-height:200px;margin:0;border-radius:0">(run solution to generate output)</pre>
+          <div id="solInputRow" style="display:none;border-top:1px solid var(--border);display:flex;align-items:center;background:var(--surface)">
+            <span style="padding:0 8px;color:var(--green);font-size:13px;font-family:var(--mono)">›</span>
+            <input id="solStdinInput" class="input" placeholder="Type input and press Enter"
+              style="border:none;border-radius:0;background:transparent;flex:1;font-size:13px"
+              onkeydown="handleSolInput(event)" />
+          </div>
+        </div>
       </div>
 
       <div class="q-section">
@@ -182,6 +187,37 @@
 <script>
 let solutionEditor = null;
 let currentId = null;
+const socket = io();
+let solRunning = false;
+
+// ── Socket: live solution runner ──────────────────────────────────────────────
+socket.on('solution_output', ({ text, done }) => {
+  const out = document.getElementById('solOutput');
+  const inputRow = document.getElementById('solInputRow');
+  if (text) {
+    out.textContent += text;
+    out.scrollTop = out.scrollHeight;
+  }
+  if (done) {
+    solRunning = false;
+    inputRow.style.display = 'none';
+    document.getElementById('runSolStatus').textContent = '';
+  } else {
+    inputRow.style.display = 'flex';
+    document.getElementById('solStdinInput').focus();
+  }
+});
+
+function handleSolInput(e) {
+  if (e.key !== 'Enter') return;
+  const input = document.getElementById('solStdinInput');
+  const val = input.value;
+  const out = document.getElementById('solOutput');
+  out.textContent += val + '\n';
+  out.scrollTop = out.scrollHeight;
+  socket.emit('solution_stdin', { text: val });
+  input.value = '';
+}
 
 // Init CodeMirror
 window.addEventListener('DOMContentLoaded', () => {
@@ -217,7 +253,6 @@ function newQuestion() {
   document.getElementById('fMaxPoints').value  = 10;
   document.getElementById('fActive').value     = '1';
   solutionEditor.setValue('');
-  document.getElementById('fStdin').value     = '';
   document.getElementById('solOutput').textContent = '(run solution to generate output)';
   document.getElementById('fError').classList.add('hidden');
   document.getElementById('deleteBtn').classList.add('hidden');
@@ -244,7 +279,6 @@ async function loadQuestion(id) {
   document.getElementById('fMaxPoints').value    = q.max_points || 10;
   document.getElementById('fActive').value       = q.is_active ? '1' : '0';
   solutionEditor.setValue(q.solution_code || '');
-  document.getElementById('fStdin').value = q.stdin || '';
   if (q.expected_output) {
     document.getElementById('solOutput').textContent = q.expected_output;
   } else {
@@ -340,17 +374,15 @@ function toggleSubPreview(btn) {
 }
 
 // ── Run solution ──────────────────────────────────────────────────────────────
-async function runSolution() {
+function runSolution() {
   const code = solutionEditor.getValue();
   if (!code.trim()) { showToast('No solution code to run.', true); return; }
+  solRunning = true;
+  const out = document.getElementById('solOutput');
+  out.textContent = '';
+  document.getElementById('solInputRow').style.display = 'none';
   document.getElementById('runSolStatus').textContent = '▶ Running…';
-  const r = await fetch('/questions/run-solution', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, stdin: document.getElementById('fStdin').value }),
-  });
-  const { output } = await r.json();
-  document.getElementById('solOutput').textContent = output || '(no output)';
-  document.getElementById('runSolStatus').textContent = '';
+  socket.emit('run_solution', { code });
 }
 
 // ── Scoring criteria rows ─────────────────────────────────────────────────────
@@ -386,7 +418,6 @@ async function saveQuestion() {
     max_points:    document.getElementById('fMaxPoints').value,
     is_active:     document.getElementById('fActive').value === '1',
     solution_code: solutionEditor.getValue(),
-    stdin:         document.getElementById('fStdin').value,
   };
 
   document.getElementById('saveBtn').disabled = true;

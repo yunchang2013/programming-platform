@@ -856,7 +856,29 @@ io.on('connection', (socket) => {
     io.to(room_id).emit('question_ended');
   });
 
-  socket.on('clear_output', ({ room_id }) => {
+  socket.on('run_solution', ({ code }) => {
+    if (!PYTHON) { socket.emit('solution_output', { text: '[Error] Python not found.', done: true }); return; }
+    if (socket._solutionProc) { socket._solutionProc.kill(); socket._solutionProc = null; }
+    const { spawn } = require('child_process');
+    const child = spawn(PYTHON.cmd, [...PYTHON.args, '-c', code], { windowsHide: true });
+    socket._solutionProc = child;
+    socket.emit('solution_output', { text: '', done: false });
+    child.stdout.on('data', d => socket.emit('solution_output', { text: d.toString(), done: false }));
+    child.stderr.on('data', d => socket.emit('solution_output', { text: '[stderr] ' + d.toString(), done: false }));
+    child.on('close', () => { socket._solutionProc = null; socket.emit('solution_output', { text: '', done: true }); });
+    child.on('error', err => { socket.emit('solution_output', { text: `[Error] ${err.message}`, done: true }); });
+    setTimeout(() => { if (socket._solutionProc) { socket._solutionProc.kill(); socket._solutionProc = null; socket.emit('solution_output', { text: '\n[Error] Timed out (15s).', done: true }); } }, 15_000);
+  });
+
+  socket.on('solution_stdin', ({ text }) => {
+    if (socket._solutionProc) socket._solutionProc.stdin.write(text + '\n');
+  });
+
+  socket.on('solution_kill', () => {
+    if (socket._solutionProc) { socket._solutionProc.kill(); socket._solutionProc = null; }
+  });
+
+
     if (rooms[room_id]) {
       rooms[room_id].output = '';
       io.to(room_id).emit('run_output', { output: '' });
