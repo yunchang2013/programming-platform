@@ -62,6 +62,12 @@
       <div style="color:var(--muted);font-size:13px">or click <strong style="color:var(--accent)">+ New Question</strong> to create one</div>
     </div>
 
+    <!-- Tabs -->
+    <div id="qTabs" class="q-tabs hidden">
+      <button class="q-tab active" data-tab="edit" onclick="switchTab('edit')">Edit Question</button>
+      <button class="q-tab" data-tab="submissions" onclick="switchTab('submissions')">Submissions</button>
+    </div>
+
     <!-- Editor form -->
     <div id="qForm" class="q-form hidden">
 
@@ -153,6 +159,20 @@
       </div>
 
     </div>
+
+    <!-- Submissions panel -->
+    <div id="qSubmissions" class="q-form hidden" style="padding:24px;max-width:100%">
+      <div id="subsLoadMsg" style="color:var(--muted)">Loading submissions…</div>
+      <div class="table-wrap" id="subsTableWrap" style="display:none">
+        <table class="dash-table" id="subsTable">
+          <thead><tr>
+            <th>Student</th><th>Score</th><th>Similarity</th><th>Submitted At</th><th></th>
+          </tr></thead>
+          <tbody id="subsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -241,14 +261,81 @@ async function loadQuestion(id) {
 
 function showForm() {
   document.getElementById('qPlaceholder').classList.add('hidden');
+  document.getElementById('qTabs').classList.remove('hidden');
   document.getElementById('qForm').classList.remove('hidden');
+  document.getElementById('qSubmissions').classList.add('hidden');
+  document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'edit'));
   setTimeout(() => solutionEditor && solutionEditor.refresh(), 50);
 }
 function cancelEdit() {
   currentId = null;
   document.getElementById('qPlaceholder').classList.remove('hidden');
+  document.getElementById('qTabs').classList.add('hidden');
   document.getElementById('qForm').classList.add('hidden');
+  document.getElementById('qSubmissions').classList.add('hidden');
   document.querySelectorAll('.q-list-item').forEach(li => li.classList.remove('active'));
+}
+
+async function switchTab(tab) {
+  document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  if (tab === 'edit') {
+    document.getElementById('qForm').classList.remove('hidden');
+    document.getElementById('qSubmissions').classList.add('hidden');
+    setTimeout(() => solutionEditor && solutionEditor.refresh(), 50);
+  } else {
+    document.getElementById('qForm').classList.add('hidden');
+    document.getElementById('qSubmissions').classList.remove('hidden');
+    await loadSubmissions();
+  }
+}
+
+async function loadSubmissions() {
+  if (!currentId) return;
+  document.getElementById('subsLoadMsg').style.display = '';
+  document.getElementById('subsTableWrap').style.display = 'none';
+  const r    = await fetch(`/dashboard/questions/${currentId}/submissions`);
+  const data = await r.json();
+  document.getElementById('subsLoadMsg').style.display = 'none';
+  const body = document.getElementById('subsBody');
+  body.innerHTML = '';
+  if (!data.length) {
+    document.getElementById('subsLoadMsg').textContent = 'No submissions yet for this question.';
+    document.getElementById('subsLoadMsg').style.display = '';
+    return;
+  }
+  data.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${esc(s.username)}</strong></td>
+      <td style="color:var(--green)"><strong>${s.score}</strong> / ${s.max_score}</td>
+      <td>${Math.round(s.similarity * 100)}%</td>
+      <td style="color:var(--muted);font-size:11px">${s.submitted_at}</td>
+      <td><button class="btn btn-sm btn-ghost" onclick="toggleSubPreview(this)">View Code</button></td>
+    `;
+    body.appendChild(tr);
+    const preview = document.createElement('tr');
+    preview.className = 'hidden';
+    preview.innerHTML = `
+      <td colspan="5">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px 0 8px">
+          <div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Code</div>
+            <pre class="code-preview-block" style="color:var(--text)">${esc(s.code)}</pre>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Output</div>
+            <pre class="code-preview-block" style="color:var(--green)">${esc(s.output)}</pre>
+          </div>
+        </div>
+      </td>
+    `;
+    body.appendChild(preview);
+  });
+  document.getElementById('subsTableWrap').style.display = '';
+}
+
+function toggleSubPreview(btn) {
+  btn.closest('tr').nextElementSibling.classList.toggle('hidden');
 }
 
 // ── Run solution ──────────────────────────────────────────────────────────────

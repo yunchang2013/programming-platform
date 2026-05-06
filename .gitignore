@@ -1,5 +1,12 @@
-# Database
+# Database — never commit any DB files
 platform.db
+platform.db-shm
+platform.db-wal
+platform.db-journal
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
 
 # Python
 __pycache__/

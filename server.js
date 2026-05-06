@@ -82,6 +82,14 @@ db.exec(`
     max_score       REAL DEFAULT 0,
     submitted_at    TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS rooms_db (
+    room_id    TEXT PRIMARY KEY,
+    host       TEXT NOT NULL,
+    code       TEXT DEFAULT '',
+    output     TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Migrate existing tables (add columns if missing)
@@ -117,6 +125,28 @@ function getIsAdmin(req) {
 }
 
 const rooms = {};
+
+// Restore persisted rooms from DB on startup
+(function loadRooms() {
+  const saved = db.prepare('SELECT * FROM rooms_db').all();
+  saved.forEach(r => {
+    rooms[r.room_id] = {
+      code: r.code || '', output: r.output || '',
+      host: r.host, users: {},
+      activeQuestion: null, questionTimer: null, timerInterval: null,
+    };
+  });
+  if (saved.length) console.log(`Restored ${saved.length} room(s) from database.`);
+})();
+
+function saveRoomToDB(room_id) {
+  const r = rooms[room_id];
+  if (!r) return;
+  db.prepare(`INSERT INTO rooms_db (room_id,host,code,output,updated_at)
+    VALUES (?,?,?,?,datetime('now'))
+    ON CONFLICT(room_id) DO UPDATE SET code=excluded.code,output=excluded.output,updated_at=excluded.updated_at`
+  ).run(room_id, r.host, r.code, r.output);
+}
 
 function genRoomId() {
   let id;
@@ -223,13 +253,24 @@ const requireRegistered = (req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  const err = req.session.authError || null;
+  const err      = req.session.authError || null;
+  const username = currentUser(req);
   delete req.session.authError;
+
+  let myRooms = [];
+  if (username) {
+    const dbRooms = db.prepare('SELECT * FROM rooms_db WHERE host=? ORDER BY updated_at DESC').all(username);
+    myRooms = dbRooms.map(r => ({
+      ...r,
+      active:    !!rooms[r.room_id],
+      userCount: rooms[r.room_id] ? Object.keys(rooms[r.room_id].users).length : 0,
+    }));
+  }
+
   res.render('index.html', {
-    username:  currentUser(req),
-    user_type: req.session.user_type,
-    is_admin:  getIsAdmin(req),
-    error: err || null,
+    username, user_type: req.session.user_type,
+    is_admin: getIsAdmin(req), error: err || null,
+    myRooms,
   });
 });
 
@@ -274,16 +315,29 @@ app.get('/logout', (req, res) => { req.session.destroy(); return res.redirect('/
 
 app.post('/create_room', requireAuth, (req, res) => {
   const roomId = genRoomId();
+  const code   = '# Welcome to CodeTogether!\nprint("Hello, World!")\n';
   rooms[roomId] = {
-    code: '# Welcome to CodeTogether!\nprint("Hello, World!")\n',
-    output: '',
-    host:  currentUser(req),
-    users: {},
-    activeQuestion:  null,
-    questionTimer:   null,
-    timerInterval:   null,
+    code, output: '', host: currentUser(req), users: {},
+    activeQuestion: null, questionTimer: null, timerInterval: null,
   };
+  saveRoomToDB(roomId);
+  req.session.lastRoom = roomId;
   return res.redirect(`/room/${roomId}`);
+});
+
+app.post('/restore_room', requireAuth, (req, res) => {
+  const { room_id } = req.body;
+  const saved = db.prepare('SELECT * FROM rooms_db WHERE room_id=?').get(room_id);
+  if (!saved) return res.redirect('/');
+  if (!rooms[room_id]) {
+    rooms[room_id] = {
+      code: saved.code || '', output: saved.output || '',
+      host: saved.host, users: {},
+      activeQuestion: null, questionTimer: null, timerInterval: null,
+    };
+  }
+  req.session.lastRoom = room_id;
+  return res.redirect(`/room/${room_id}`);
 });
 
 app.post('/join', requireAuth, (req, res) => {
@@ -561,10 +615,14 @@ io.on('connection', (socket) => {
     io.to(room_id).emit('user_joined', { username, users: Object.values(room.users) });
   });
 
+  const saveTimers = {};
   socket.on('code_change', ({ room_id, code, username }) => {
     if (rooms[room_id]) {
       rooms[room_id].code = code;
       socket.to(room_id).emit('code_update', { code, by: username });
+      // Debounced DB save — every 10 s of inactivity
+      clearTimeout(saveTimers[room_id]);
+      saveTimers[room_id] = setTimeout(() => saveRoomToDB(room_id), 10_000);
     }
   });
 
@@ -578,7 +636,7 @@ io.on('connection', (socket) => {
       if (stderr) out += (out ? '\n' : '') + '[stderr]\n' + stderr;
       if (err && err.killed) out = '[Error] Execution timed out (15s limit).';
       else if (err && !stdout && !stderr) out = `[Error] ${err.message}`;
-      if (rooms[room_id]) rooms[room_id].output = out;
+      if (rooms[room_id]) { rooms[room_id].output = out; saveRoomToDB(room_id); }
       io.to(room_id).emit('run_output', { output: out });
     });
   });
@@ -679,6 +737,7 @@ io.on('connection', (socket) => {
         delete data.users[socket.id];
         io.to(room_id).emit('user_left', { username, users: Object.values(data.users) });
         if (Object.keys(data.users).length === 0) {
+          saveRoomToDB(room_id);
           if (data.questionTimer)  clearTimeout(data.questionTimer);
           if (data.timerInterval)  clearInterval(data.timerInterval);
           delete rooms[room_id];

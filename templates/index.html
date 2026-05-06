@@ -37,6 +37,36 @@
       </div>
     </div>
 
+    {% if myRooms and myRooms.length %}
+    <div class="card" style="margin-bottom:20px">
+      <h2 style="font-size:14px;margin-bottom:14px;color:var(--text)">My Rooms</h2>
+      {% for r in myRooms %}
+      <div class="my-room-row">
+        <div class="my-room-info">
+          <span class="room-code-pill">{{ r.room_id }}</span>
+          {% if r.active %}
+            <span class="badge badge-active" style="font-size:10px">
+              Live · {{ r.userCount }} user{{ 's' if r.userCount != 1 else '' }}
+            </span>
+          {% else %}
+            <span style="color:var(--muted);font-size:11px">Saved · {{ r.updated_at }}</span>
+          {% endif %}
+        </div>
+        <div style="display:flex;gap:8px">
+          {% if r.active %}
+            <a href="/room/{{ r.room_id }}" class="btn btn-sm btn-primary">Rejoin</a>
+          {% else %}
+            <form method="POST" action="/restore_room" style="display:inline">
+              <input type="hidden" name="room_id" value="{{ r.room_id }}" />
+              <button class="btn btn-sm btn-outline">Restore &amp; Rejoin</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="action-grid">
       <!-- Create room -->
       <div class="card action-card">
