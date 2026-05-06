@@ -122,12 +122,9 @@
         </div>
       </div>
 
-      <div class="q-section" id="solOutputSection" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <label class="q-section-label" style="margin:0">Solution Output <span style="color:var(--muted);font-size:11px;font-weight:400">(auto-generated — this is what students must match)</span></label>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('solOutputSection').style.display='none'">Hide</button>
-        </div>
-        <pre id="solOutput" class="code-preview-block" style="color:var(--green);min-height:40px"></pre>
+      <div class="q-section" id="solOutputSection">
+        <label class="q-section-label" style="margin-bottom:6px;display:block">Solution Output <span style="color:var(--muted);font-size:11px;font-weight:400">(auto-generated — this is what students must match)</span></label>
+        <pre id="solOutput" class="code-preview-block" style="color:var(--green);min-height:40px">(run solution to generate output)</pre>
       </div>
 
       <div class="q-section">
@@ -217,7 +214,7 @@ function newQuestion() {
   document.getElementById('fActive').value     = '1';
   solutionEditor.setValue('');
   document.getElementById('critBody').innerHTML = '';
-  document.getElementById('solOutputSection').style.display = 'none';
+  document.getElementById('solOutput').textContent = '(run solution to generate output)';
   document.getElementById('fError').classList.add('hidden');
   document.getElementById('deleteBtn').classList.add('hidden');
   document.querySelector('.q-list-item.active')?.classList.remove('active');
@@ -245,9 +242,8 @@ async function loadQuestion(id) {
   solutionEditor.setValue(q.solution_code || '');
   if (q.expected_output) {
     document.getElementById('solOutput').textContent = q.expected_output;
-    document.getElementById('solOutputSection').style.display = '';
   } else {
-    document.getElementById('solOutputSection').style.display = 'none';
+    document.getElementById('solOutput').textContent = '(run solution to generate output)';
   }
   // Load criteria
   const body = document.getElementById('critBody');
@@ -348,9 +344,8 @@ async function runSolution() {
     body: JSON.stringify({ code }),
   });
   const { output } = await r.json();
-  document.getElementById('runSolStatus').textContent = '';
   document.getElementById('solOutput').textContent = output || '(no output)';
-  document.getElementById('solOutputSection').style.display = '';
+  document.getElementById('runSolStatus').textContent = '';
 }
 
 // ── Scoring criteria rows ─────────────────────────────────────────────────────
@@ -456,10 +451,7 @@ async function saveQuestion() {
     setTimeout(async () => {
       const qr = await fetch(`/dashboard/questions/${qId}`);
       const q  = await qr.json();
-      if (q.expected_output) {
-        document.getElementById('solOutput').textContent = q.expected_output;
-        document.getElementById('solOutputSection').style.display = '';
-      }
+      document.getElementById('solOutput').textContent = q.expected_output || '(no output)';
     }, 1500);
   }
 }

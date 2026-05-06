@@ -185,7 +185,8 @@ if (!PYTHON) console.warn('WARNING: Python 3 not found — code execution will f
 
 function runPython(code, cb) {
   if (!PYTHON) { cb(new Error('Python not found'), '', ''); return; }
-  execFile(PYTHON.cmd, [...PYTHON.args, '-c', code], { timeout: 15_000, windowsHide: true }, cb);
+  const child = execFile(PYTHON.cmd, [...PYTHON.args, '-c', code], { timeout: 15_000, windowsHide: true }, cb);
+  child.stdin.end();
 }
 
 // Run a question's solution code and cache the output as expected_output
