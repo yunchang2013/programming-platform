@@ -119,8 +119,7 @@
             <span id="qBannerTimer" class="q-timer hidden"></span>
           </div>
         </div>
-        <div id="qBannerDesc" class="q-banner-desc hidden"></div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleQDesc()" id="qDescToggle" style="font-size:11px">Show description</button>
+        <div id="qBannerDesc" class="q-banner-desc"></div>
       </div>
 
       <div class="pane-label">
@@ -328,9 +327,6 @@ function showQuestion(q) {
   document.getElementById('qBannerPoints').textContent = `Max ${q.max_points} pts`;
   if (q.description) {
     document.getElementById('qBannerDesc').textContent = q.description;
-    document.getElementById('qDescToggle').classList.remove('hidden');
-  } else {
-    document.getElementById('qDescToggle').classList.add('hidden');
   }
   if (q.remaining !== null && q.remaining !== undefined) {
     const timerEl = document.getElementById('qBannerTimer');
@@ -363,13 +359,6 @@ function updateTimer(remaining) {
   el.textContent = `⏱ ${m}:${String(s).padStart(2,'0')}`;
   el.style.color = remaining <= 30 ? 'var(--red)' : remaining <= 60 ? 'var(--yellow)' : 'var(--accent)';
 }
-function toggleQDesc() {
-  const el  = document.getElementById('qBannerDesc');
-  const btn = document.getElementById('qDescToggle');
-  el.classList.toggle('hidden');
-  btn.textContent = el.classList.contains('hidden') ? 'Show description' : 'Hide description';
-}
-
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function renderUsers(users, host) {
   const ul = document.getElementById('userList');
