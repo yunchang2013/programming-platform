@@ -120,6 +120,10 @@
         <div id="solutionEditorWrap" class="q-code-wrap">
           <textarea id="solutionCode"></textarea>
         </div>
+        <div style="margin-top:8px">
+          <label class="q-section-label" style="margin-bottom:4px;display:block">Stdin inputs <span style="color:var(--muted);font-size:11px;font-weight:400">(one value per line — fed to input() calls)</span></label>
+          <textarea id="fStdin" class="input" rows="3" placeholder="e.g.&#10;5&#10;hello world" style="font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
+        </div>
       </div>
 
       <div class="q-section" id="solOutputSection">
@@ -213,7 +217,7 @@ function newQuestion() {
   document.getElementById('fMaxPoints').value  = 10;
   document.getElementById('fActive').value     = '1';
   solutionEditor.setValue('');
-  document.getElementById('critBody').innerHTML = '';
+  document.getElementById('fStdin').value     = '';
   document.getElementById('solOutput').textContent = '(run solution to generate output)';
   document.getElementById('fError').classList.add('hidden');
   document.getElementById('deleteBtn').classList.add('hidden');
@@ -240,6 +244,7 @@ async function loadQuestion(id) {
   document.getElementById('fMaxPoints').value    = q.max_points || 10;
   document.getElementById('fActive').value       = q.is_active ? '1' : '0';
   solutionEditor.setValue(q.solution_code || '');
+  document.getElementById('fStdin').value = q.stdin || '';
   if (q.expected_output) {
     document.getElementById('solOutput').textContent = q.expected_output;
   } else {
@@ -341,7 +346,7 @@ async function runSolution() {
   document.getElementById('runSolStatus').textContent = '▶ Running…';
   const r = await fetch('/questions/run-solution', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, stdin: document.getElementById('fStdin').value }),
   });
   const { output } = await r.json();
   document.getElementById('solOutput').textContent = output || '(no output)';
@@ -381,6 +386,7 @@ async function saveQuestion() {
     max_points:    document.getElementById('fMaxPoints').value,
     is_active:     document.getElementById('fActive').value === '1',
     solution_code: solutionEditor.getValue(),
+    stdin:         document.getElementById('fStdin').value,
   };
 
   document.getElementById('saveBtn').disabled = true;
