@@ -878,7 +878,7 @@ io.on('connection', (socket) => {
     if (socket._solutionProc) { socket._solutionProc.kill(); socket._solutionProc = null; }
   });
 
-
+  socket.on('clear_output', ({ room_id }) => {
     if (rooms[room_id]) {
       rooms[room_id].output = '';
       io.to(room_id).emit('run_output', { output: '' });
