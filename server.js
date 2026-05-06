@@ -84,9 +84,11 @@ db.exec(`
   );
 `);
 
-// Migrate existing users table (add columns if missing)
+// Migrate existing tables (add columns if missing)
 try { db.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))`); } catch {}
+try { db.exec(`ALTER TABLE questions ADD COLUMN solution_code TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE questions ADD COLUMN difficulty TEXT DEFAULT 'medium'`); } catch {}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function hashPw(pw) { return crypto.createHash('sha256').update(pw).digest('hex'); }
@@ -147,6 +149,17 @@ if (!PYTHON) console.warn('WARNING: Python 3 not found — code execution will f
 function runPython(code, cb) {
   if (!PYTHON) { cb(new Error('Python not found'), '', ''); return; }
   execFile(PYTHON.cmd, [...PYTHON.args, '-c', code], { timeout: 15_000, windowsHide: true }, cb);
+}
+
+// Run a question's solution code and cache the output as expected_output
+function runSolutionAndCache(questionId, cb) {
+  const q = db.prepare('SELECT id, solution_code FROM questions WHERE id=?').get(questionId);
+  if (!q || !q.solution_code || !q.solution_code.trim()) { if (cb) cb(null, ''); return; }
+  runPython(q.solution_code, (err, stdout) => {
+    const out = stdout || '';
+    db.prepare('UPDATE questions SET expected_output=? WHERE id=?').run(out, questionId);
+    if (cb) cb(null, out);
+  });
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -318,6 +331,35 @@ app.get('/room/:room_id', requireAuth, (req, res) => {
   });
 });
 
+// ── Questions management page ─────────────────────────────────────────────────
+app.get('/questions', requireRegistered, (req, res) => {
+  const username = currentUser(req);
+  const admin    = getIsAdmin(req);
+  const questions = admin
+    ? db.prepare('SELECT id,title,difficulty,time_limit,max_points,is_active,created_by FROM questions ORDER BY created_at DESC').all()
+    : db.prepare('SELECT id,title,difficulty,time_limit,max_points,is_active,created_by FROM questions WHERE created_by=? ORDER BY created_at DESC').all(username);
+  res.render('questions.html', { username, is_admin: admin, questions });
+});
+
+app.get('/dashboard/questions/:id', requireRegistered, (req, res) => {
+  const q = db.prepare('SELECT * FROM questions WHERE id=?').get(req.params.id);
+  if (!q) return res.status(404).json({ error: 'Not found.' });
+  res.json(q);
+});
+
+app.post('/questions/run-solution', requireRegistered, (req, res) => {
+  const { code } = req.body;
+  if (!code || !code.trim()) return res.json({ output: '' });
+  if (!PYTHON) return res.json({ output: '[Error] Python not found on server.' });
+  runPython(code, (err, stdout, stderr) => {
+    let out = stdout || '';
+    if (stderr) out += (out ? '\n' : '') + '[stderr]\n' + stderr;
+    if (err && err.killed) out = '[Error] Execution timed out (15s limit).';
+    else if (err && !stdout && !stderr) out = `[Error] ${err.message}`;
+    res.json({ output: out });
+  });
+});
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 app.get('/dashboard', requireRegistered, (req, res) => {
   const username = currentUser(req);
@@ -367,11 +409,13 @@ app.get('/dashboard', requireRegistered, (req, res) => {
 
 // Questions CRUD
 app.post('/dashboard/questions', requireRegistered, (req, res) => {
-  const { title, description, expected_output, time_limit, max_points } = req.body;
-  if (!title || !expected_output) return res.status(400).json({ error: 'Title and expected output required.' });
+  const { title, description, expected_output, time_limit, max_points, solution_code, difficulty } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title required.' });
   const r = db.prepare(
-    'INSERT INTO questions (title,description,expected_output,time_limit,max_points,created_by) VALUES (?,?,?,?,?,?)'
-  ).run(title, description || '', expected_output, parseInt(time_limit)||0, parseFloat(max_points)||10, currentUser(req));
+    'INSERT INTO questions (title,description,expected_output,time_limit,max_points,created_by,solution_code,difficulty) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(title, description || '', expected_output || '', parseInt(time_limit)||0, parseFloat(max_points)||10,
+        currentUser(req), solution_code || '', difficulty || 'medium');
+  if (solution_code && solution_code.trim()) runSolutionAndCache(r.lastInsertRowid);
   res.json({ id: r.lastInsertRowid });
 });
 
@@ -380,15 +424,19 @@ app.put('/dashboard/questions/:id', requireRegistered, (req, res) => {
   if (!q) return res.status(404).json({ error: 'Not found.' });
   if (q.created_by !== currentUser(req) && !getIsAdmin(req))
     return res.status(403).json({ error: 'Not authorized.' });
-  const { title, description, expected_output, time_limit, max_points, is_active } = req.body;
-  db.prepare(`UPDATE questions SET title=?,description=?,expected_output=?,time_limit=?,max_points=?,is_active=?
+  const { title, description, expected_output, time_limit, max_points, is_active, solution_code, difficulty } = req.body;
+  db.prepare(`UPDATE questions SET title=?,description=?,expected_output=?,time_limit=?,max_points=?,is_active=?,solution_code=?,difficulty=?
     WHERE id=?`).run(
     title ?? q.title, description ?? q.description, expected_output ?? q.expected_output,
-    time_limit !== undefined ? parseInt(time_limit) : q.time_limit,
-    max_points !== undefined ? parseFloat(max_points) : q.max_points,
-    is_active  !== undefined ? (is_active ? 1 : 0) : q.is_active,
+    time_limit  !== undefined ? parseInt(time_limit)   : q.time_limit,
+    max_points  !== undefined ? parseFloat(max_points) : q.max_points,
+    is_active   !== undefined ? (is_active ? 1 : 0)   : q.is_active,
+    solution_code !== undefined ? solution_code        : (q.solution_code || ''),
+    difficulty || q.difficulty || 'medium',
     req.params.id
   );
+  const newSol = solution_code !== undefined ? solution_code : q.solution_code;
+  if (newSol && newSol.trim()) runSolutionAndCache(req.params.id);
   res.json({ ok: true });
 });
 
@@ -590,6 +638,7 @@ io.on('connection', (socket) => {
     const payload = {
       id: q.id, title: q.title, description: q.description,
       max_points: q.max_points, time_limit: q.time_limit,
+      difficulty: q.difficulty || 'medium',
       endTime, remaining: q.time_limit > 0 ? q.time_limit : null,
     };
     io.to(room_id).emit('question_activated', payload);

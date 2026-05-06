@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Questions — CodeTogether</title>
+
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="dash-page">
+
+<header class="dash-header">
+  <a href="/" class="logo-small">⌨ CodeTogether</a>
+  <span style="color:var(--muted);font-size:13px">Questions</span>
+  <span style="flex:1"></span>
+  <a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+  <a href="/" class="btn btn-ghost btn-sm">Home</a>
+</header>
+
+<div class="q-page-layout">
+
+  <!-- ── Left: Question list ── -->
+  <aside class="q-list-panel">
+    <div style="padding:12px">
+      <button class="btn btn-primary btn-full" onclick="newQuestion()">+ New Question</button>
+    </div>
+    <div style="padding:0 12px 8px">
+      <input id="qSearch" class="input" style="font-size:12px" placeholder="Search…" oninput="filterList()" />
+    </div>
+    <ul id="qList" class="q-list">
+      {% for q in questions %}
+      <li class="q-list-item" id="qli-{{ q.id }}" onclick="loadQuestion({{ q.id }})">
+        <div class="q-list-title">{{ q.title }}</div>
+        <div class="q-list-meta">
+          <span class="diff-badge diff-{{ q.difficulty }}">{{ q.difficulty }}</span>
+          <span style="color:var(--muted);font-size:11px">{{ q.time_limit ~ 's' if q.time_limit else '∞' }}</span>
+          <span style="color:var(--yellow);font-size:11px">{{ q.max_points }} pts</span>
+          {% if not q.is_active %}<span style="color:var(--muted);font-size:10px">(inactive)</span>{% endif %}
+        </div>
+      </li>
+      {% else %}
+      <li style="padding:16px 12px;color:var(--muted);font-size:12px">No questions yet.</li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <!-- ── Right: Editor ── -->
+  <main class="q-editor-panel" id="qEditorPanel">
+
+    <!-- Placeholder when nothing selected -->
+    <div id="qPlaceholder" class="q-placeholder">
+      <div style="font-size:40px;margin-bottom:12px">📝</div>
+      <div style="font-size:15px;color:var(--text);margin-bottom:6px">Select a question to edit</div>
+      <div style="color:var(--muted);font-size:13px">or click <strong style="color:var(--accent)">+ New Question</strong> to create one</div>
+    </div>
+
+    <!-- Editor form -->
+    <div id="qForm" class="q-form hidden">
+
+      <div class="q-form-top">
+        <input id="fTitle" class="input q-title-input" placeholder="Question title…" />
+        <div class="q-meta-row">
+          <div class="form-row" style="margin:0;flex-direction:row;align-items:center;gap:8px">
+            <label style="white-space:nowrap">Difficulty:</label>
+            <select id="fDifficulty" class="input" style="width:120px">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <div class="form-row" style="margin:0;flex-direction:row;align-items:center;gap:8px">
+            <label style="white-space:nowrap">Time limit (s):</label>
+            <input id="fTimeLimit" class="input" type="number" min="0" value="0" style="width:90px" title="0 = no limit" />
+          </div>
+          <div class="form-row" style="margin:0;flex-direction:row;align-items:center;gap:8px">
+            <label style="white-space:nowrap">Max points:</label>
+            <input id="fMaxPoints" class="input" type="number" min="0" step="0.5" value="10" style="width:90px" />
+          </div>
+          <div class="form-row" style="margin:0;flex-direction:row;align-items:center;gap:8px">
+            <label>Status:</label>
+            <select id="fActive" class="input" style="width:100px">
+              <option value="1">Active</option>
+              <option value="0">Inactive</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="q-section">
+        <label class="q-section-label">Problem Description</label>
+        <textarea id="fDesc" class="input" rows="4" placeholder="Describe the problem for students. What should their program do?"></textarea>
+      </div>
+
+      <div class="q-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label class="q-section-label" style="margin:0">Solution Code</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="runSolStatus" class="run-status"></span>
+            <button class="btn btn-sm btn-outline" onclick="runSolution()" style="color:var(--green);border-color:var(--green)">▶ Run Solution</button>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          Write the correct Python solution. When saved, it runs automatically to set the expected output.
+          When the timer ends, students' outputs are compared against this.
+        </p>
+        <div id="solutionEditorWrap" class="q-code-wrap">
+          <textarea id="solutionCode"></textarea>
+        </div>
+      </div>
+
+      <div class="q-section" id="solOutputSection" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label class="q-section-label" style="margin:0">Solution Output <span style="color:var(--muted);font-size:11px;font-weight:400">(auto-generated — this is what students must match)</span></label>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('solOutputSection').style.display='none'">Hide</button>
+        </div>
+        <pre id="solOutput" class="code-preview-block" style="color:var(--green);min-height:40px"></pre>
+      </div>
+
+      <div class="q-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <label class="q-section-label" style="margin:0">Scoring Criteria <span style="color:var(--muted);font-size:11px;font-weight:400">(overrides global)</span></label>
+          <button class="btn btn-sm btn-outline" onclick="addCritRow()" style="font-size:11px">+ Add Row</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          Leave empty to use global criteria from Dashboard. Higher threshold rows take priority.
+          Example: 100% → 10 pts, 50% → 5 pts, 10% → 1 pt.
+        </p>
+        <table class="dash-table" id="critTable" style="margin-bottom:6px">
+          <thead><tr>
+            <th>Min Similarity (%)</th>
+            <th>Points Awarded</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="critBody"></tbody>
+        </table>
+      </div>
+
+      <div id="fError" class="alert alert-error hidden"></div>
+
+      <div class="q-form-actions">
+        <input type="hidden" id="fId" />
+        <button class="btn btn-ghost" onclick="cancelEdit()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveQuestion()" id="saveBtn">Save Question</button>
+        <button id="deleteBtn" class="btn btn-outline hidden" onclick="deleteQuestion()" style="color:var(--red);border-color:var(--red);margin-left:auto">Delete</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+let solutionEditor = null;
+let currentId = null;
+
+// Init CodeMirror
+window.addEventListener('DOMContentLoaded', () => {
+  solutionEditor = CodeMirror.fromTextArea(document.getElementById('solutionCode'), {
+    mode: 'python', theme: 'dracula', lineNumbers: true,
+    indentUnit: 4, tabSize: 4, indentWithTabs: false,
+    matchBrackets: true, autoCloseBrackets: true, lineWrapping: false,
+    extraKeys: {
+      'Tab':       cm => cm.execCommand('indentMore'),
+      'Shift-Tab': cm => cm.execCommand('indentLess'),
+      'Ctrl-/':    cm => cm.execCommand('toggleComment'),
+      'Ctrl-Enter': runSolution,
+    },
+  });
+});
+
+// ── List filtering ─────────────────────────────────────────────────────────────
+function filterList() {
+  const val = document.getElementById('qSearch').value.toLowerCase();
+  document.querySelectorAll('.q-list-item').forEach(li => {
+    li.style.display = li.querySelector('.q-list-title').textContent.toLowerCase().includes(val) ? '' : 'none';
+  });
+}
+
+// ── New question ───────────────────────────────────────────────────────────────
+function newQuestion() {
+  currentId = null;
+  document.getElementById('fId').value       = '';
+  document.getElementById('fTitle').value    = '';
+  document.getElementById('fDesc').value     = '';
+  document.getElementById('fDifficulty').value = 'medium';
+  document.getElementById('fTimeLimit').value  = 0;
+  document.getElementById('fMaxPoints').value  = 10;
+  document.getElementById('fActive').value     = '1';
+  solutionEditor.setValue('');
+  document.getElementById('critBody').innerHTML = '';
+  document.getElementById('solOutputSection').style.display = 'none';
+  document.getElementById('fError').classList.add('hidden');
+  document.getElementById('deleteBtn').classList.add('hidden');
+  document.querySelector('.q-list-item.active')?.classList.remove('active');
+  showForm();
+}
+
+// ── Load question for editing ──────────────────────────────────────────────────
+async function loadQuestion(id) {
+  document.querySelectorAll('.q-list-item').forEach(li => li.classList.remove('active'));
+  document.getElementById('qli-' + id)?.classList.add('active');
+  const [qr, cr] = await Promise.all([
+    fetch(`/dashboard/questions/${id}`),
+    fetch(`/dashboard/questions/${id}/criteria`),
+  ]);
+  const q = await qr.json();
+  const criteria = await cr.json();
+  currentId = id;
+  document.getElementById('fId').value          = id;
+  document.getElementById('fTitle').value        = q.title || '';
+  document.getElementById('fDesc').value         = q.description || '';
+  document.getElementById('fDifficulty').value   = q.difficulty || 'medium';
+  document.getElementById('fTimeLimit').value    = q.time_limit || 0;
+  document.getElementById('fMaxPoints').value    = q.max_points || 10;
+  document.getElementById('fActive').value       = q.is_active ? '1' : '0';
+  solutionEditor.setValue(q.solution_code || '');
+  if (q.expected_output) {
+    document.getElementById('solOutput').textContent = q.expected_output;
+    document.getElementById('solOutputSection').style.display = '';
+  } else {
+    document.getElementById('solOutputSection').style.display = 'none';
+  }
+  // Load criteria
+  const body = document.getElementById('critBody');
+  body.innerHTML = '';
+  criteria.forEach(c => addCritRow(c.min_similarity * 100, c.score));
+  document.getElementById('fError').classList.add('hidden');
+  document.getElementById('deleteBtn').classList.remove('hidden');
+  showForm();
+  setTimeout(() => solutionEditor.refresh(), 50);
+}
+
+function showForm() {
+  document.getElementById('qPlaceholder').classList.add('hidden');
+  document.getElementById('qForm').classList.remove('hidden');
+  setTimeout(() => solutionEditor && solutionEditor.refresh(), 50);
+}
+function cancelEdit() {
+  currentId = null;
+  document.getElementById('qPlaceholder').classList.remove('hidden');
+  document.getElementById('qForm').classList.add('hidden');
+  document.querySelectorAll('.q-list-item').forEach(li => li.classList.remove('active'));
+}
+
+// ── Run solution ──────────────────────────────────────────────────────────────
+async function runSolution() {
+  const code = solutionEditor.getValue();
+  if (!code.trim()) { showToast('No solution code to run.', true); return; }
+  document.getElementById('runSolStatus').textContent = '▶ Running…';
+  const r = await fetch('/questions/run-solution', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  const { output } = await r.json();
+  document.getElementById('runSolStatus').textContent = '';
+  document.getElementById('solOutput').textContent = output || '(no output)';
+  document.getElementById('solOutputSection').style.display = '';
+}
+
+// ── Scoring criteria rows ─────────────────────────────────────────────────────
+function addCritRow(sim = '', score = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="input c-sim" type="number" min="0" max="100" step="1" value="${sim}" placeholder="e.g. 50" style="width:110px" /></td>
+    <td><input class="input c-score" type="number" min="0" step="0.5" value="${score}" placeholder="e.g. 5" style="width:110px" /></td>
+    <td><button class="btn btn-sm btn-outline" onclick="this.closest('tr').remove()" style="color:var(--red);border-color:var(--red)">Remove</button></td>
+  `;
+  document.getElementById('critBody').appendChild(tr);
+}
+
+function getCriteria() {
+  return [...document.querySelectorAll('#critBody tr')].map(tr => ({
+    min_similarity: parseFloat(tr.querySelector('.c-sim').value) / 100,
+    score:          parseFloat(tr.querySelector('.c-score').value),
+  })).filter(c => !isNaN(c.min_similarity) && !isNaN(c.score));
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+async function saveQuestion() {
+  const id    = document.getElementById('fId').value;
+  const title = document.getElementById('fTitle').value.trim();
+  const errEl = document.getElementById('fError');
+  if (!title) { errEl.textContent = 'Title is required.'; errEl.classList.remove('hidden'); return; }
+
+  const body = {
+    title,
+    description:   document.getElementById('fDesc').value,
+    difficulty:    document.getElementById('fDifficulty').value,
+    time_limit:    document.getElementById('fTimeLimit').value,
+    max_points:    document.getElementById('fMaxPoints').value,
+    is_active:     document.getElementById('fActive').value === '1',
+    solution_code: solutionEditor.getValue(),
+  };
+
+  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('saveBtn').textContent = 'Saving…';
+
+  let r, d;
+  if (id) {
+    r = await fetch(`/dashboard/questions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } else {
+    r = await fetch('/dashboard/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  d = await r.json();
+
+  document.getElementById('saveBtn').disabled = false;
+  document.getElementById('saveBtn').textContent = 'Save Question';
+
+  if (d.error) { errEl.textContent = d.error; errEl.classList.remove('hidden'); return; }
+  errEl.classList.add('hidden');
+
+  const qId = id || d.id;
+
+  // Save criteria
+  const criteria = getCriteria();
+  await fetch(`/dashboard/questions/${qId}/criteria`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ criteria }),
+  });
+
+  showToast(id ? 'Question updated.' : 'Question created.');
+
+  if (!id) {
+    document.getElementById('fId').value = qId;
+    document.getElementById('deleteBtn').classList.remove('hidden');
+    currentId = qId;
+    // Add to list
+    const li = document.createElement('li');
+    li.className = 'q-list-item active';
+    li.id = 'qli-' + qId;
+    li.setAttribute('onclick', `loadQuestion(${qId})`);
+    li.innerHTML = `
+      <div class="q-list-title">${esc(title)}</div>
+      <div class="q-list-meta">
+        <span class="diff-badge diff-${body.difficulty}">${body.difficulty}</span>
+        <span style="color:var(--muted);font-size:11px">${body.time_limit > 0 ? body.time_limit + 's' : '∞'}</span>
+        <span style="color:var(--yellow);font-size:11px">${body.max_points} pts</span>
+      </div>
+    `;
+    const emptyLi = document.querySelector('#qList li:not(.q-list-item)');
+    if (emptyLi) emptyLi.remove();
+    document.getElementById('qList').prepend(li);
+  } else {
+    // Update list item
+    const li = document.getElementById('qli-' + qId);
+    if (li) {
+      li.querySelector('.q-list-title').textContent = title;
+      const meta = li.querySelector('.q-list-meta');
+      meta.innerHTML = `
+        <span class="diff-badge diff-${body.difficulty}">${body.difficulty}</span>
+        <span style="color:var(--muted);font-size:11px">${body.time_limit > 0 ? body.time_limit + 's' : '∞'}</span>
+        <span style="color:var(--yellow);font-size:11px">${body.max_points} pts</span>
+        ${!body.is_active ? '<span style="color:var(--muted);font-size:10px">(inactive)</span>' : ''}
+      `;
+    }
+  }
+
+  // Show the expected output if solution was run
+  if (body.solution_code && body.solution_code.trim()) {
+    setTimeout(async () => {
+      const qr = await fetch(`/dashboard/questions/${qId}`);
+      const q  = await qr.json();
+      if (q.expected_output) {
+        document.getElementById('solOutput').textContent = q.expected_output;
+        document.getElementById('solOutputSection').style.display = '';
+      }
+    }, 1500);
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteQuestion() {
+  const id = document.getElementById('fId').value;
+  if (!id || !confirm('Delete this question and all its submissions?')) return;
+  const r = await fetch(`/dashboard/questions/${id}`, { method: 'DELETE' });
+  const d = await r.json();
+  if (d.error) { showToast(d.error, true); return; }
+  document.getElementById('qli-' + id)?.remove();
+  cancelEdit();
+  showToast('Question deleted.');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (err ? ' toast-error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast hidden', 3000);
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

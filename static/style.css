@@ -588,6 +588,125 @@ a:hover { text-decoration: underline; }
 /* ── Q selector in topbar ─────────────────────────────────────────────────── */
 .q-selector { display: flex; align-items: center; gap: 6px; }
 
+/* ── Questions page ──────────────────────────────────────────────────────── */
+.q-page-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100vh - 50px);
+}
+
+.q-list-panel {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.q-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.q-list-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background .1s;
+}
+.q-list-item:hover  { background: var(--surface2); }
+.q-list-item.active { background: var(--surface2); border-left-color: var(--accent); }
+
+.q-list-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.q-list-meta  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.q-editor-panel {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.q-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-align: center;
+  padding: 40px;
+}
+
+.q-form {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 900px;
+}
+.q-form.hidden { display: none; }
+
+.q-form-top {
+  margin-bottom: 20px;
+}
+.q-title-input {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+}
+.q-meta-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.q-section { margin-bottom: 24px; }
+.q-section-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.q-section textarea.input { resize: vertical; }
+
+.q-code-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 200px;
+}
+.q-code-wrap .CodeMirror { height: 240px; }
+
+.q-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Difficulty badges ───────────────────────────────────────────────────── */
+.diff-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: capitalize;
+  letter-spacing: .3px;
+}
+.diff-easy   { background: rgba(166,227,161,.15); color: var(--green); border: 1px solid rgba(166,227,161,.4); }
+.diff-medium { background: rgba(249,226,175,.15); color: var(--yellow); border: 1px solid rgba(249,226,175,.4); }
+.diff-hard   { background: rgba(243,139,168,.15); color: var(--red); border: 1px solid rgba(243,139,168,.4); }
+
 /* ── Scores page ─────────────────────────────────────────────────────────── */
 .scores-page { display: flex; flex-direction: column; min-height: 100vh; }
 

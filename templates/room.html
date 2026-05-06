@@ -173,6 +173,7 @@ personalEditor.on('change', () => {
 const socket = io();
 let suppressUpdate = false;
 let activeQuestionId = null;
+let hasSubmitted = false;
 
 socket.on('connect', () => socket.emit('join', { room_id: ROOM_ID, username: USERNAME }));
 
@@ -228,6 +229,7 @@ socket.on('personal_output', data => {
 });
 
 socket.on('submission_result', data => {
+  hasSubmitted = true;
   if (data.error) { showToast(data.error, true); return; }
   const pct = data.similarity;
   const scoreEl = document.getElementById('scoreDisplay');
@@ -244,10 +246,18 @@ socket.on('submission_result', data => {
   `;
   scoreEl.classList.remove('hidden');
   showToast(`Submitted! Score: ${data.score} / ${data.max_score}`);
+  hideQuestion();
 });
 
 socket.on('question_activated', data => showQuestion(data));
-socket.on('question_ended', () => hideQuestion());
+socket.on('question_ended', () => {
+  if (activeQuestionId && !hasSubmitted) {
+    showToast("Time's up! Auto-submitting your code…");
+    socket.emit('submit_answer', { room_id: ROOM_ID, question_id: activeQuestionId, code: personalEditor.getValue() });
+  } else {
+    hideQuestion();
+  }
+});
 socket.on('question_timer', ({ remaining }) => updateTimer(remaining));
 socket.on('error', data => showToast(data.message, true));
 
@@ -301,7 +311,11 @@ function copyRoomId() { navigator.clipboard.writeText(ROOM_ID).then(() => showTo
 // ── Question banner ───────────────────────────────────────────────────────────
 function showQuestion(q) {
   activeQuestionId = q.id;
-  document.getElementById('qBannerTitle').textContent  = q.title;
+  hasSubmitted = false;
+  const diffColors = { easy: 'var(--green)', medium: 'var(--yellow)', hard: 'var(--red)' };
+  const diffColor  = diffColors[q.difficulty] || 'var(--muted)';
+  document.getElementById('qBannerTitle').innerHTML =
+    `${q.title} <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:${diffColor};font-weight:600;text-transform:capitalize">${q.difficulty || 'medium'}</span>`;
   document.getElementById('qBannerPoints').textContent = `Max ${q.max_points} pts`;
   if (q.description) {
     document.getElementById('qBannerDesc').textContent = q.description;
