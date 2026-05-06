@@ -106,6 +106,10 @@ try { db.exec(`ALTER TABLE questions ADD COLUMN solution_code TEXT DEFAULT ''`);
 try { db.exec(`ALTER TABLE questions ADD COLUMN difficulty TEXT DEFAULT 'medium'`); } catch {}
 try { db.exec(`ALTER TABLE questions ADD COLUMN stdin TEXT DEFAULT ''`); } catch {}
 
+// Verify stdin column exists (in case migration was skipped)
+{ const cols = db.prepare('PRAGMA table_info(questions)').all().map(c => c.name);
+  if (!cols.includes('stdin')) db.exec(`ALTER TABLE questions ADD COLUMN stdin TEXT DEFAULT ''`); }
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function hashPw(pw) { return crypto.createHash('sha256').update(pw).digest('hex'); }
 
