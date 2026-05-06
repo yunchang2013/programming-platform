@@ -127,7 +127,7 @@
         <label class="q-section-label" style="margin-bottom:6px;display:block">Solution Output <span style="color:var(--muted);font-size:11px;font-weight:400">(auto-generated — this is what students must match)</span></label>
         <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
           <pre id="solOutput" class="output-area" style="min-height:80px;max-height:200px;margin:0;border-radius:0">(run solution to generate output)</pre>
-          <div id="solInputRow" style="display:none;border-top:1px solid var(--border);display:flex;align-items:center;background:var(--surface)">
+          <div id="solInputRow" class="hidden" style="border-top:1px solid var(--border);display:flex;align-items:center;background:var(--surface)">
             <span style="padding:0 8px;color:var(--green);font-size:13px;font-family:var(--mono)">›</span>
             <input id="solStdinInput" class="input" placeholder="Type input and press Enter"
               style="border:none;border-radius:0;background:transparent;flex:1;font-size:13px"
@@ -198,9 +198,12 @@ socket.on('solution_output', ({ text, done }) => {
     out.textContent += text;
     out.scrollTop = out.scrollHeight;
   }
-  if (done) {
+  if (!done) {
+    inputRow.classList.remove('hidden');
+    document.getElementById('solStdinInput').focus();
+  } else {
     solRunning = false;
-    inputRow.style.display = 'none';
+    inputRow.classList.add('hidden');
     document.getElementById('runSolStatus').textContent = '';
   }
 });
@@ -377,7 +380,7 @@ function runSolution() {
   solRunning = true;
   const out = document.getElementById('solOutput');
   out.textContent = '';
-  document.getElementById('solInputRow').style.display = 'none';
+  document.getElementById('solInputRow').classList.add('hidden');
   document.getElementById('runSolStatus').textContent = '▶ Running…';
   socket.emit('run_solution', { code });
 }
