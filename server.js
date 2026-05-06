@@ -776,14 +776,24 @@ io.on('connection', (socket) => {
 
   socket.on('run_personal', ({ code }) => {
     if (!PYTHON) { socket.emit('personal_output', { output: '[Error] Python 3 not found on this server.' }); return; }
+    if (socket._personalProc) { socket._personalProc.kill(); socket._personalProc = null; }
+    const { spawn } = require('child_process');
+    const child = spawn(PYTHON.cmd, [...PYTHON.args, '-c', code], { windowsHide: true });
+    socket._personalProc = child;
     socket.emit('personal_run_start');
-    runPython(code, (err, stdout, stderr) => {
-      let out = stdout || '';
-      if (stderr) out += (out ? '\n' : '') + '[stderr]\n' + stderr;
-      if (err && err.killed) out = '[Error] Execution timed out (15s limit).';
-      else if (err && !stdout && !stderr) out = `[Error] ${err.message}`;
-      socket.emit('personal_output', { output: out });
-    });
+    let out = '';
+    child.stdout.on('data', d => { out += d.toString(); socket.emit('personal_output_chunk', { text: d.toString() }); });
+    child.stderr.on('data', d => { out += d.toString(); socket.emit('personal_output_chunk', { text: '[stderr] ' + d.toString() }); });
+    child.on('close', () => { socket._personalProc = null; socket.emit('personal_output', { output: out || '(no output)' }); });
+    child.on('error', err => { socket.emit('personal_output', { output: `[Error] ${err.message}` }); });
+    setTimeout(() => { if (socket._personalProc) { socket._personalProc.kill(); socket._personalProc = null; socket.emit('personal_output', { output: out + '\n[Error] Timed out (15s).' }); } }, 15_000);
+  });
+
+  socket.on('personal_stdin', ({ text }) => {
+    if (socket._personalProc) {
+      socket.emit('personal_output_chunk', { text: text + '\n' });
+      socket._personalProc.stdin.write(text + '\n');
+    }
   });
 
   socket.on('submit_answer', ({ room_id, question_id, code }) => {
