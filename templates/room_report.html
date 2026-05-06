@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Room {{ room_id }} Report — CodeTogether</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="dash-page">
+
+<header class="dash-header">
+  <a href="/" class="logo-small">⌨ CodeTogether</a>
+  <span style="color:var(--muted);font-size:13px">Room <strong style="color:var(--accent)">{{ room_id }}</strong> — Participant Report</span>
+  <span style="flex:1"></span>
+  <button class="btn btn-ghost btn-sm" onclick="location.reload()">↻ Refresh</button>
+  <a href="/room/{{ room_id }}" class="btn btn-ghost btn-sm">Back to Room</a>
+  <a href="/" class="btn btn-ghost btn-sm">Home</a>
+</header>
+
+<main class="dash-main">
+
+  <!-- Summary cards -->
+  <div class="report-summary">
+    <div class="report-card">
+      <div class="report-card-val">{{ participants | length }}</div>
+      <div class="report-card-label">Total Participants</div>
+    </div>
+    <div class="report-card">
+      <div class="report-card-val" style="color:var(--green)">{{ liveUsers | length }}</div>
+      <div class="report-card-label">Currently Live</div>
+    </div>
+    <div class="report-card">
+      <div class="report-card-val" style="color:var(--yellow)">{{ submissions | length }}</div>
+      <div class="report-card-label">Total Submissions Today</div>
+    </div>
+    <div class="report-card">
+      <div class="report-card-val" style="color:var(--accent)" id="avgScore">—</div>
+      <div class="report-card-label">Average Score Today</div>
+    </div>
+  </div>
+
+  <!-- Participants table -->
+  <div class="dash-section" style="margin-top:24px">
+    <div class="dash-section-head">
+      <h2>Participants</h2>
+      <span style="font-size:12px;color:var(--muted)">Click a row to see submissions · Click score to edit</span>
+    </div>
+    <div class="table-wrap">
+      <table class="dash-table" id="participantTable">
+        <thead><tr>
+          <th>Username</th>
+          <th>Status</th>
+          <th>Today's Score</th>
+          <th>Total Score (Room)</th>
+          <th>Questions Done</th>
+          <th>Submissions</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          {% for p in participants %}
+          {% set isLive = p.username in liveUsers %}
+          <tr class="participant-row" onclick="toggleParticipant('p{{ loop.index }}', this)">
+            <td><strong>{{ p.username }}</strong></td>
+            <td>
+              {% if isLive %}
+                <span style="display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:12px">
+                  <span class="user-dot"></span> Live
+                </span>
+              {% else %}
+                <span style="color:var(--muted);font-size:12px">Offline</span>
+              {% endif %}
+            </td>
+            <td class="today-score-cell" data-username="{{ p.username }}">
+              <strong style="color:var(--green);font-size:15px">{{ p.today_score | round(2) }}</strong>
+            </td>
+            <td style="color:var(--muted)">{{ p.total_score | round(2) }}</td>
+            <td>{{ p.questions_done }}</td>
+            <td>{{ p.sub_count }}</td>
+            <td style="color:var(--muted);font-size:18px">▾</td>
+          </tr>
+          <!-- Expanded submissions for this participant -->
+          <tr id="p{{ loop.index }}" class="participant-detail hidden">
+            <td colspan="7" style="padding:0">
+              <div class="participant-detail-inner" id="detail-{{ p.username }}">
+                <table class="dash-table" style="background:var(--bg)">
+                  <thead><tr>
+                    <th>Question</th>
+                    <th>Score</th>
+                    <th>Max</th>
+                    <th>Similarity</th>
+                    <th>Submitted At</th>
+                    <th>Override Score</th>
+                  </tr></thead>
+                  <tbody id="subs-{{ p.username | replace(' ','_') }}">
+                    <tr><td colspan="6" style="color:var(--muted);text-align:center;font-size:12px">
+                      No submissions yet.
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:40px">
+            No participants recorded yet. Users appear here when they join the room.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- Submission data injected from server -->
+<script type="application/json" id="submissions-data">
+{{ submissions | dump }}
+</script>
+
+<script>
+
+// Group submissions by username
+const SUBMISSIONS = JSON.parse(document.getElementById('submissions-data').textContent);
+const subsByUser = {};
+SUBMISSIONS.forEach(s => {
+  if (!subsByUser[s.username]) subsByUser[s.username] = [];
+  subsByUser[s.username].push(s);
+});
+
+// Calculate avg today score
+const todayScores = [...document.querySelectorAll('.today-score-cell')].map(
+  td => parseFloat(td.querySelector('strong').textContent)
+).filter(n => n > 0);
+if (todayScores.length) {
+  document.getElementById('avgScore').textContent =
+    (todayScores.reduce((a,b)=>a+b,0) / todayScores.length).toFixed(1);
+}
+
+// ── Populate submission rows on DOM ready ─────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  Object.entries(subsByUser).forEach(([username, subs]) => {
+    const key  = username.replace(/\s/g, '_');
+    const tbody = document.getElementById('subs-' + key);
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    subs.forEach(s => tbody.appendChild(makeSubRow(s)));
+  });
+});
+
+function makeSubRow(s) {
+  const tr = document.createElement('tr');
+  tr.id = 'subrow-' + s.id;
+  tr.innerHTML = `
+    <td style="color:var(--muted)">${esc(s.q_title)}</td>
+    <td><span class="score-val" id="score-${s.id}" style="color:var(--green);font-weight:700">${s.score}</span></td>
+    <td style="color:var(--muted)">${s.max_points}</td>
+    <td>${Math.round(s.similarity * 100)}%</td>
+    <td style="color:var(--muted);font-size:11px">${s.submitted_at}</td>
+    <td>
+      <div class="score-edit-wrap" id="edit-${s.id}">
+        <button class="btn btn-sm btn-outline" onclick="startEdit(${s.id}, ${s.score})"
+          style="font-size:11px;color:var(--yellow);border-color:var(--yellow)">Edit</button>
+      </div>
+    </td>
+  `;
+  // Add expandable code/output sub-row
+  const ctr = document.createElement('tr');
+  ctr.className = 'hidden';
+  ctr.id = 'code-' + s.id;
+  ctr.innerHTML = `
+    <td colspan="6" style="padding:0 0 8px 24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Code</div>
+          <pre class="code-preview-block" style="color:var(--text)">${esc(s.code)}</pre></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Output</div>
+          <pre class="code-preview-block" style="color:var(--green)">${esc(s.output)}</pre></div>
+      </div>
+    </td>
+  `;
+  // Make score cell clickable to toggle code
+  tr.querySelector('.score-val').style.cursor = 'pointer';
+  tr.querySelector('.score-val').title = 'Click to view code';
+  tr.querySelector('.score-val').onclick = (e) => {
+    e.stopPropagation();
+    ctr.classList.toggle('hidden');
+  };
+  // We need to insert ctr after tr — handled after append
+  tr._codeRow = ctr;
+  return tr;
+}
+
+// After populating, insert code rows
+document.addEventListener('DOMContentLoaded', () => {
+  Object.entries(subsByUser).forEach(([username, subs]) => {
+    const key   = username.replace(/\s/g, '_');
+    const tbody = document.getElementById('subs-' + key);
+    if (!tbody) return;
+    // Rows were already appended in the first listener; now insert code rows
+    [...tbody.querySelectorAll('tr[id^="subrow-"]')].forEach(tr => {
+      if (tr._codeRow) tbody.insertBefore(tr._codeRow, tr.nextSibling);
+    });
+  });
+});
+
+// ── Toggle participant detail row ─────────────────────────────────────────────
+function toggleParticipant(rowId, headerRow) {
+  const detail = document.getElementById(rowId);
+  const isHidden = detail.classList.contains('hidden');
+  // Close all others
+  document.querySelectorAll('.participant-detail').forEach(r => r.classList.add('hidden'));
+  document.querySelectorAll('.participant-row td:last-child').forEach(td => td.textContent = '▾');
+  if (isHidden) {
+    detail.classList.remove('hidden');
+    headerRow.querySelector('td:last-child').textContent = '▴';
+  }
+}
+
+// ── Score editing ─────────────────────────────────────────────────────────────
+function startEdit(subId, currentScore) {
+  const wrap = document.getElementById('edit-' + subId);
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px">
+      <input id="newscore-${subId}" class="input" type="number" min="0" step="0.5"
+        value="${currentScore}" style="width:80px;font-size:12px;padding:4px 8px" />
+      <button class="btn btn-sm btn-accent" onclick="saveScore(${subId})" style="font-size:11px">Save</button>
+      <button class="btn btn-sm btn-ghost" onclick="cancelEdit(${subId}, ${currentScore})" style="font-size:11px">Cancel</button>
+    </div>
+  `;
+  document.getElementById('newscore-' + subId).focus();
+  document.getElementById('newscore-' + subId).select();
+}
+
+async function saveScore(subId) {
+  const input = document.getElementById('newscore-' + subId);
+  const newScore = parseFloat(input.value);
+  if (isNaN(newScore) || newScore < 0) { showToast('Enter a valid score.', true); return; }
+
+  const r = await fetch(`/submissions/${subId}/score`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ score: newScore }),
+  });
+  const d = await r.json();
+  if (d.error) { showToast(d.error, true); return; }
+
+  // Update displayed score
+  document.getElementById('score-' + subId).textContent = newScore;
+  // Reset edit button
+  cancelEdit(subId, newScore);
+  // Recalculate today total for this user
+  recalcUserTotal(subId, newScore);
+  showToast('Score updated.');
+}
+
+function cancelEdit(subId, score) {
+  const wrap = document.getElementById('edit-' + subId);
+  wrap.innerHTML = `
+    <button class="btn btn-sm btn-outline" onclick="startEdit(${subId}, ${score})"
+      style="font-size:11px;color:var(--yellow);border-color:var(--yellow)">Edit</button>
+  `;
+}
+
+function recalcUserTotal(subId, newScore) {
+  // Find the sub record and update its score in SUBMISSIONS array
+  const sub = SUBMISSIONS.find(s => s.id === subId);
+  if (sub) sub.score = newScore;
+
+  // Recompute today total for that user
+  const username = sub ? sub.username : null;
+  if (!username) return;
+  const userSubs = SUBMISSIONS.filter(s => s.username === username);
+  const todayTotal = userSubs.reduce((sum, s) => sum + s.score, 0);
+
+  const cell = document.querySelector(`.today-score-cell[data-username="${CSS.escape(username)}"] strong`);
+  if (cell) cell.textContent = todayTotal.toFixed(2);
+
+  // Recalc avg
+  const allTotals = [...document.querySelectorAll('.today-score-cell strong')]
+    .map(el => parseFloat(el.textContent)).filter(n => n > 0);
+  if (allTotals.length) {
+    document.getElementById('avgScore').textContent =
+      (allTotals.reduce((a,b)=>a+b,0) / allTotals.length).toFixed(1);
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (err ? ' toast-error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast hidden', 3000);
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

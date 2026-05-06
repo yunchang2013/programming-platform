@@ -90,6 +90,13 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS room_participants (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id   TEXT NOT NULL,
+    username  TEXT NOT NULL,
+    joined_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(room_id, username)
+  );
 `);
 
 // Migrate existing tables (add columns if missing)
@@ -581,6 +588,74 @@ app.get('/scores/data', requireAuth, (req, res) => {
   res.json({ submissions, daily });
 });
 
+// ── Room Report ───────────────────────────────────────────────────────────────
+app.get('/room/:room_id/report', requireAuth, (req, res) => {
+  const { room_id } = req.params;
+  const username  = currentUser(req);
+  const savedRoom = db.prepare('SELECT * FROM rooms_db WHERE room_id=?').get(room_id);
+  const isHost    = (savedRoom && savedRoom.host === username) || getIsAdmin(req);
+  if (!isHost) return res.redirect(`/room/${room_id}`);
+
+  // All unique participants with per-room submission stats
+  const participants = db.prepare(`
+    SELECT
+      rp.username,
+      rp.joined_at,
+      COALESCE(SUM(CASE WHEN date(s.submitted_at)=date('now') THEN s.score ELSE 0 END),0) AS today_score,
+      COALESCE(SUM(s.score),0)                                                             AS total_score,
+      COUNT(DISTINCT s.question_id)                                                        AS questions_done,
+      COUNT(s.id)                                                                          AS sub_count
+    FROM room_participants rp
+    LEFT JOIN submissions s ON s.username=rp.username AND s.room_id=?
+    WHERE rp.room_id=?
+    GROUP BY rp.username
+    ORDER BY today_score DESC, rp.joined_at ASC
+  `).all(room_id, room_id);
+
+  // All submissions for this room grouped by participant
+  const submissions = db.prepare(`
+    SELECT s.*, q.title AS q_title, q.max_points
+    FROM submissions s
+    JOIN questions q ON q.id=s.question_id
+    WHERE s.room_id=?
+    ORDER BY s.username, s.submitted_at DESC
+  `).all(room_id);
+
+  // Current live users
+  const liveUsers = new Set(rooms[room_id] ? Object.values(rooms[room_id].users) : []);
+
+  res.render('room_report.html', {
+    room_id,
+    username,
+    room_host: savedRoom ? savedRoom.host : username,
+    participants,
+    submissions,
+    liveUsers: [...liveUsers],
+  });
+});
+
+// Score override
+app.put('/submissions/:id/score', requireAuth, (req, res) => {
+  const sub = db.prepare(`
+    SELECT s.*, q.created_by, s.room_id
+    FROM submissions s JOIN questions q ON q.id=s.question_id
+    WHERE s.id=?
+  `).get(req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Submission not found.' });
+
+  const username  = currentUser(req);
+  const savedRoom = db.prepare('SELECT host FROM rooms_db WHERE room_id=?').get(sub.room_id);
+  const isRoomHost = savedRoom && savedRoom.host === username;
+  if (sub.created_by !== username && !isRoomHost && !getIsAdmin(req))
+    return res.status(403).json({ error: 'Not authorised.' });
+
+  const newScore = parseFloat(req.body.score);
+  if (isNaN(newScore) || newScore < 0) return res.status(400).json({ error: 'Invalid score.' });
+
+  db.prepare('UPDATE submissions SET score=? WHERE id=?').run(newScore, sub.id);
+  res.json({ ok: true, score: newScore });
+});
+
 // ── Socket.IO events ──────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
 
@@ -611,6 +686,9 @@ io.on('connection', (socket) => {
         };
       }
     }
+    // Track participant in DB
+    db.prepare('INSERT OR IGNORE INTO room_participants (room_id, username) VALUES (?,?)').run(room_id, username);
+
     socket.emit('sync', syncData);
     io.to(room_id).emit('user_joined', { username, users: Object.values(room.users) });
   });

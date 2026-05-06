@@ -53,6 +53,7 @@
       {% if user_type == 'guest' %}<span class="badge badge-guest">Guest</span>{% endif %}
     </div>
     <a href="/scores" class="btn btn-ghost btn-sm">Scores</a>
+    {% if is_host %}<a href="/room/{{ room_id }}/report" target="_blank" class="btn btn-ghost btn-sm" style="color:var(--yellow)">Report</a>{% endif %}
     <a href="/" class="btn btn-ghost btn-sm">Leave</a>
   </div>
 </header>
